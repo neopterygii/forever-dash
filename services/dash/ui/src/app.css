@@ -1,0 +1,18 @@
+/* Base styles; the tokens come from Polestar (vite.config.ts, polestarTokens). */
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+	background: var(--bg);
+	color: var(--text);
+	font: 500 13px/1.35 var(--font);
+	overflow: hidden;
+	-webkit-font-smoothing: antialiased;
+	text-shadow: var(--text-shadow);
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+h2, h3, h4 { margin: 0; font-weight: 600; }
+:focus { outline: none; }
+:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
+* { scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
+select option { background: var(--panel); color: var(--text); }
