@@ -1,0 +1,4 @@
+{
+	"about": "Patched hand-written addon files laid over upstream's release zip. Each entry: path in the zip, the sha256 of upstream's file it was based on, and the file in this repo that replaces it. The build fails if upstream's file no longer has base_sha256 (rebase the fix, or drop it once upstream ships it).",
+	"patches": []
+}
