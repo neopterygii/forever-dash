@@ -3,13 +3,13 @@
 // four-point star, for "where we've been". The wordmark is Cinzel (SIL OFL 1.1, tools/media/fonts),
 // drawn as outlines with Polestar's Outliner so the SVGs need no web font.
 //
-//   node services/dash/tools/brand.cjs        -> services/dash/web/brand/{mark,wordmark,favicon}.svg
+//   node services/dash/tools/brand.cjs        -> services/dash/ui/public/brand/{mark,wordmark,favicon}.svg
 const fs = require('node:fs');
 const path = require('node:path');
 const { Outliner } = require('../../../tools/readme/outline');
 
 const C = { accent: '#e6ba66', accentLight: '#ffeec2', navy: '#0a0d16', text: '#f7f8fd', textMuted: '#9ba2b9' };
-const OUT = path.join(__dirname, '..', 'web', 'brand');
+const OUT = path.join(__dirname, '..', 'ui', 'public', 'brand');
 
 // A four-point star centred at (cx, cy): tips ry up/down, rx left/right, waist w.
 const star = (cx, cy, rx, ry, w) =>

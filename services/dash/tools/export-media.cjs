@@ -1,6 +1,6 @@
 // Exports the planner's on-the-fly art as static files for the dashboard: every Polestar glyph
 // (64 px) and the Nav textures MapView's pin atlas loads. Run from anywhere:
-//   node services/dash/tools/export-media.cjs <out-dir>
+//   node services/dash/tools/export-media.cjs services/dash/ui/public
 const fs = require('node:fs');
 const path = require('node:path');
 const glyphs = require('../../../tools/planner/glyphs');

@@ -6,8 +6,9 @@ trail replay (Polestar's planner MapView), and a play journal with notes. See
 
 ```sh
 cargo build --release
-node tools/export-media.cjs web            # Polestar glyphs + Nav arrow as static PNGs (gitignored)
-node tools/brand.cjs                       # web/brand/*.svg (committed; rerun after changing the mark)
+node tools/export-media.cjs ui/public      # Polestar glyphs + Nav arrow as static PNGs (gitignored)
+node tools/brand.cjs                       # ui/public/brand/*.svg (committed; rerun after changing the mark)
+(cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
 ./target/release/forever-dash serve --db dash.db [--addr 127.0.0.1:8790] [--art <planner art dir>]
 ./target/release/forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
@@ -25,7 +26,10 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   Everything is kept; only the map is limited to a playtime buffer.
 - Map: overview of all characters (default 6 h of play each), or one character in focus (default
   its last session, up to all play), scrubbed over playtime (offline gaps skipped).
-- Web (`web/`): plain ES modules importing `/planner/map/mapview.js` straight from this fork's
-  `tools/planner/public`, so MapView updates with upstream. Without `--art` MapView draws its
-  grid; with `planner art` output it draws terrain and zone art.
+- Web (`ui/`): Svelte 5 + TypeScript + Vite, the same stack and versions as Polestar Client
+  (`apps/client`). It bundles MapView from this fork's `tools/planner/public/map/` and takes
+  Polestar's design tokens and fonts from the planner's stylesheet at build time
+  (`vite.config.ts`, `polestarTokens`; only `:root` and `@font-face`, since the planner's own
+  layout rules use global class names). Without `--art` MapView draws its grid; with
+  `planner art` output it draws terrain and zone art.
 - Raw chunks are kept, so derived tables can be rebuilt after a Recorder schema change.

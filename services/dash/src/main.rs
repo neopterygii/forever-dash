@@ -1,6 +1,6 @@
 //! forever-dash: the self-hosted dashboard server.
 //!
-//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web DIR] [--planner DIR] [--art DIR]
+//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR]
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
 //!
@@ -145,8 +145,7 @@ async fn serve(args: &[String]) {
 	let here = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let db_path = arg(args, "--db", "dash.db");
 	let addr = arg(args, "--addr", "127.0.0.1:8790");
-	let web = arg(args, "--web", &here.join("web").to_string_lossy());
-	let planner = arg(args, "--planner", &here.join("../../tools/planner/public").to_string_lossy());
+	let web = arg(args, "--web", &here.join("ui/dist").to_string_lossy());
 	let art = arg(args, "--art", "art");
 	let db: Db = Arc::new(Mutex::new(db::open(&db_path).expect("open the database")));
 	let app = Router::new()
@@ -159,7 +158,6 @@ async fn serve(args: &[String]) {
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
 		.route("/api/stats", get(stats))
-		.nest_service("/planner", ServeDir::new(planner))
 		.nest_service("/art", ServeDir::new(art))
 		// Inter and Fira Sans (SIL OFL 1.1), as the addon ships them.
 		.nest_service("/fonts", ServeDir::new(here.join("../../addon/Polestar/Media/Fonts")))
