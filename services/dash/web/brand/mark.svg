@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="Forever Dash">
+<title>Forever Dash</title>
+<defs><radialGradient id="glow" cx="44" cy="20" r="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e6ba66" stop-opacity="0.32"/><stop offset="1" stop-color="#e6ba66" stop-opacity="0"/></radialGradient></defs>
+<rect x="2" y="2" width="60" height="60" rx="12" fill="#0a0d16"/>
+<rect x="2" y="2" width="60" height="60" rx="12" fill="url(#glow)"/>
+<rect x="2.5" y="2.5" width="59" height="59" rx="11.5" fill="none" stroke="#fff" stroke-opacity="0.07"/>
+<path d="M22.5 43.5C25 40.5 24 38 28.5 36S37 32.5 37.5 28" fill="none" stroke="#e6ba66" stroke-opacity="0.85" stroke-linecap="round" stroke-width="3.2" stroke-dasharray="0 5.6"/>
+<circle cx="15" cy="49" r="3.4" fill="none" stroke="#e6ba66" stroke-width="1.8"/>
+<path fill="#e6ba66" d="M44 6L46.8 17.2L53 20L46.8 22.8L44 34L41.2 22.8L35 20L41.2 17.2Z"/>
+<path fill="#ffeec2" d="M44 13.6L45.1 18.9L47.6 20L45.1 21.1L44 26.4L42.9 21.1L40.4 20L42.9 18.9Z"/>
+</svg>
