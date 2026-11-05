@@ -204,7 +204,13 @@ fn scan(wtf: &Path) -> Vec<Found> {
 				let id = vars.iter().rev().find(|(n, _)| n == "PolestarRecorderCharDB").and_then(|(_, v)| v.get("id")).and_then(|v| v.as_str()).map(str::to_string);
 				if let Some(id) = id.filter(|i| sv::valid_char_id(i)) {
 					let name = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
-					characters.insert(id, Who { name: name(&ch), realm: name(&realm) });
+					// Forever: `<acct>/<number>/<Name-Realm>/`; older clients: `<acct>/<Realm>/<Name>/`.
+					let folder = name(&ch);
+					let who = match folder.split_once('-') {
+						Some((n, r)) if !n.is_empty() && !r.is_empty() => Who { name: n.to_string(), realm: r.to_string() },
+						_ => Who { name: folder, realm: name(&realm) },
+					};
+					characters.insert(id, who);
 				}
 			}
 		}
