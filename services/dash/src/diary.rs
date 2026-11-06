@@ -469,11 +469,62 @@ fn capitalize(s: &str) -> String {
 // ---------------------------------------------------------------------------------------------
 // The model's entry.
 
+/// Bumped when the prompt or its facts change: entries written with an older one are written again.
+const PROMPT_VERSION: u32 = 2;
+
 const SYSTEM: &str = "You write one diary entry for a World of Warcraft character, in their own first-person voice, about one play session. \
-Use only the facts given: never invent places, people, quests, items, weather, numbers or outcomes. Numbers you use must be the ones given. \
-You may describe feelings and atmosphere in keeping with the character's race and class. Mention the notable moments, not every event. \
+Use only the facts given: never invent places, people, quests, items, weather, numbers or outcomes. \
+Never give clock times or exact figures; the facts already say how long and how far in words, use those or leave them out. \
+Write names exactly as given (quest names in quotes, with their capitals). Do not list everything: tell the session as a small story, \
+picking the few moments that matter most. You may describe feelings and atmosphere in keeping with the character's race and class. \
 Avoid game jargon such as experience points, 'quest', 'turned in' or 'level 8': say it the way a person in that world would. \
-120 to 180 words. Plain prose, no headings, no lists, no title.";
+Length: the number of words the facts ask for. Plain prose, no headings, no lists, no title.";
+
+/// What the model is told: the facts in words, trimmed to what an entry can use.
+fn prompt_facts(f: &Facts) -> Value {
+	let little = f.kills < 10 && f.quests_done.len() + f.quests_taken.len() < 2 && f.discovered.is_empty() && f.deaths.is_empty() && f.level_to.is_none() && f.instances.is_empty();
+	let named = |v: &[String], n: usize| -> Value {
+		json!({ "count": v.len(), "named": v.iter().take(n).collect::<Vec<_>>() })
+	};
+	let who = [f.sex.as_str(), f.race.as_str(), f.class.as_str()].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" ");
+	let mut v = json!({
+		"who": if who.is_empty() { f.name.clone() } else { format!("{}, a {who}", f.name) },
+		"time_of_day": f.time_of_day,
+		"how_long": duration(f.minutes),
+		"zones": f.zones,
+		"began_at": f.first_place,
+		"ended_at": f.last_place,
+		"words": if little { "40 to 70" } else { "110 to 160" },
+	});
+	let o = v.as_object_mut().unwrap();
+	let mut put = |k: &str, val: Value| {
+		o.insert(k.into(), val);
+	};
+	if !f.quests_done.is_empty() { put("errands_finished", named(&f.quests_done, 3)); }
+	if !f.quests_taken.is_empty() { put("errands_taken_on", named(&f.quests_taken, 2)); }
+	if !f.quests_abandoned.is_empty() { put("errands_given_up", named(&f.quests_abandoned, 1)); }
+	if f.kills > 0 {
+		let foes: Vec<String> = f.foes.iter().take(3).map(|(n, c)| if *c > 1 { plural(n) } else { n.clone() }).collect();
+		let many = match f.kills { 1 => "one".to_string(), 2..=20 => count(f.kills), _ => format!("more than {}", f.kills / 10 * 10) };
+		put("fought", json!({ "creatures_killed": many, "mostly": foes, "notable_foes": f.elites_or_bosses.iter().take(2).collect::<Vec<_>>() }));
+	}
+	if !f.deaths.is_empty() { put("died", json!({ "times": times(f.deaths.len() as i64), "killed_by": f.deaths.iter().flatten().take(3).collect::<Vec<_>>() })); }
+	if !f.rares_seen.is_empty() { put("rare_creatures_seen", json!(f.rares_seen.iter().take(2).collect::<Vec<_>>())); }
+	if !f.discovered.is_empty() { put("places_found", json!(f.discovered.iter().take(3).collect::<Vec<_>>())); }
+	if !f.learned.is_empty() { put("learned", named(&f.learned, 3)); }
+	if let (Some(a), Some(b)) = (f.level_from, f.level_to) { put("grew_stronger", json!(format!("from level {a} to {b}"))); }
+	if f.flights > 0 { put("flew", json!(times(f.flights))); }
+	if !f.instances.is_empty() { put("went_into", json!({ "places": f.instances, "powers_defeated_inside": f.bosses_defeated })); }
+	if let Some(h) = &f.hearth_set_at { put("made_home_at", json!(h)); }
+	if !f.marks.is_empty() { put("own_notes", json!(f.marks.iter().take(2).collect::<Vec<_>>())); }
+	if f.yards_walked >= 3000 { put("walked", json!(format!("about {} yards", round_yards(f.yards_walked)))); }
+	v
+}
+
+/// Too little happened for prose: the template entry says it better.
+fn worth_prose(f: &Facts) -> bool {
+	f.minutes >= 5 || f.kills > 0 || !f.quests_done.is_empty() || f.level_to.is_some()
+}
 
 pub struct Ai {
 	pub url: String,
@@ -495,7 +546,7 @@ impl Ai {
 			"model": self.model,
 			"messages": [
 				{ "role": "system", "content": SYSTEM },
-				{ "role": "user", "content": format!("Facts:\n{}", serde_json::to_string(f).unwrap_or_default()) },
+				{ "role": "user", "content": format!("Facts:\n{}", serde_json::to_string_pretty(&prompt_facts(f)).unwrap_or_default()) },
 			],
 			"temperature": 0.8,
 			"max_tokens": 600,
@@ -511,9 +562,13 @@ impl Ai {
 			return Err(format!("{status}: {}", v["error"]["message"].as_str().unwrap_or("")));
 		}
 		let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
-		let model = v["model"].as_str().unwrap_or(&self.model).to_string();
-		if text.split_whitespace().count() < 40 {
+		let model = format!("{} v{PROMPT_VERSION}", v["model"].as_str().unwrap_or(&self.model));
+		if text.split_whitespace().count() < 25 {
 			return Err(format!("too short an answer ({} words)", text.split_whitespace().count()));
+		}
+		// Clock times are the one slip the prompt can't fully stop: send it back.
+		if text.split_whitespace().any(|w| { let w = w.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != ':'); w.len() >= 4 && w.contains(':') && w.split(':').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) }) {
+			return Err("the answer gave a clock time".into());
 		}
 		Ok((text, model))
 	}
@@ -528,8 +583,10 @@ fn pending(db: &Connection, now: f64) -> rusqlite::Result<Vec<(String, f64, f64)
 			if now - end < CLOSED_AFTER {
 				continue;
 			}
-			let have: Option<f64> = db.query_row("SELECT end FROM diary WHERE char_id = ?1 AND start = ?2 AND source = 'ai'", params![id, start], |r| r.get(0)).optional()?;
-			if have.is_none_or(|e| (e - end).abs() > 1.0) {
+			let have: Option<(f64, Option<String>)> =
+				db.query_row("SELECT end, model FROM diary WHERE char_id = ?1 AND start = ?2 AND source = 'ai'", params![id, start], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+			let current = have.as_ref().is_some_and(|(e, m)| (e - end).abs() <= 1.0 && m.as_deref().is_some_and(|m| m.ends_with(&format!(" v{PROMPT_VERSION}"))));
+			if !current {
 				out.push((id.clone(), start, end));
 			}
 		}
@@ -553,6 +610,11 @@ pub fn run(ai: Ai, db_path: String) {
 				let todo = pending(&db, now).unwrap_or_default();
 				for (id, start, end) in todo.into_iter().take(20) {
 					let f = match facts(&db, &id, start, end) {
+						Ok(f) if !worth_prose(&f) => {
+							// Kept as the template's: drop an older model entry for it.
+							let _ = db.execute("DELETE FROM diary WHERE char_id = ?1 AND start = ?2 AND source = 'ai'", params![id, start]);
+							continue;
+						}
 						Ok(f) => f,
 						Err(e) => {
 							eprintln!("diary: facts {id} {start}: {e}");
@@ -590,7 +652,7 @@ pub fn entry(db: &Connection, char_id: &str, start: f64, end: f64) -> rusqlite::
 			Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
 		})
 		.optional()?;
-	let ai_now = ai.filter(|a| (a.2 - end).abs() <= 1.0);
+	let ai_now = ai.filter(|a| (a.2 - end).abs() <= 1.0 && a.1.as_deref().is_some_and(|m| m.ends_with(&format!(" v{PROMPT_VERSION}"))));
 	if let Some((text, at)) = mine {
 		return Ok(json!({ "text": text, "source": "you", "at": at, "generated": ai_now.is_some() }));
 	}
@@ -668,6 +730,18 @@ mod tests {
 		let t = template(&f, 1);
 		assert!(t.starts_with("I spent a few minutes in Mulgore this morning."), "{t}");
 		assert_eq!(t.matches("Mulgore").count(), 1, "{t}");
+	}
+
+	#[test]
+	fn the_prompt_gets_words_not_figures() {
+		let v = prompt_facts(&meera());
+		let s = v.to_string();
+		assert!(!s.contains("167"), "{s}");
+		assert!(s.contains("more than 160"), "{s}");
+		assert!(s.contains("about 11,000 yards"), "{s}");
+		assert!(s.contains("about two hours"), "{s}");
+		assert_eq!(v["errands_finished"]["named"].as_array().unwrap().len(), 3);
+		assert_eq!(v["words"], "110 to 160");
 	}
 
 	#[test]

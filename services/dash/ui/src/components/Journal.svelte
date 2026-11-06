@@ -98,7 +98,8 @@
 	const sessionKey = (s: Session) => `${s.char}:${s.start}`;
 	const SOURCE: Record<string, string> = { you: 'Your words', ai: 'Written from the log', template: 'From the log' };
 	function sourceLabel(s: Session): string {
-		if (s.diary.source === 'ai') return `Written from the log by ${s.diary.model?.includes('gemini') ? 'Gemini' : (s.diary.model ?? 'a model')}`;
+		// The gateway's `diary` model is Gemini.
+		if (s.diary.source === 'ai') return `Written from the log by ${/gemini|^diary/i.test(s.diary.model ?? '') ? 'Gemini' : 'a model'}`;
 		return SOURCE[s.diary.source] ?? '';
 	}
 	function startEdit(s: Session) {
