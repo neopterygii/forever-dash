@@ -7,7 +7,20 @@
 	import Journal from './components/Journal.svelte';
 	import CharacterSheet from './components/CharacterSheet.svelte';
 
-	onMount(() => dash.run(dash.load()));
+	onMount(() => {
+		dash.run(dash.load());
+		const onPop = () => dash.run(dash.applyLocation());
+		window.addEventListener('popstate', onPop);
+		return () => window.removeEventListener('popstate', onPop);
+	});
+
+	/** Esc leaves the selected character (after the character sheet, which closes first). */
+	function onkey(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || e.defaultPrevented || dash.sheet || dash.mode !== 'focus') return;
+		const t = e.target as HTMLElement | null;
+		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+		dash.run(dash.leaveFocus());
+	}
 
 	const who = $derived.by(() => {
 		if (dash.mode === 'overview') return dash.overview ? `All characters · last ${dash.overview.hours} h of play each` : '';
@@ -21,6 +34,9 @@
 	<Sidebar />
 	<main>
 		<nav class="tabs">
+			{#if dash.mode === 'focus'}
+				<button class="back" title="Back to all characters (Esc)" onclick={() => dash.run(dash.leaveFocus())}><i></i>All characters</button>
+			{/if}
 			<span class="who">{who}</span>
 			<button class="jt" class:on={dash.journalOpen} aria-pressed={dash.journalOpen} onclick={() => (dash.journalOpen = !dash.journalOpen)}>
 				<img src="/glyph/guides.png" alt="" />Journal
@@ -33,6 +49,7 @@
 	</main>
 </div>
 <CharacterSheet />
+<svelte:window onkeydown={onkey} />
 {#if dash.error}<pre class="error">{dash.error}</pre>{/if}
 
 <style>
@@ -41,6 +58,10 @@
 	main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 	.body { position: relative; min-height: 0; }
 	.tabs { display: flex; gap: 4px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
+	.back { display: inline-flex; align-items: center; gap: 4px; flex: none; background: var(--chip); border: 0; padding: 6px 10px 6px 6px; border-radius: 8px; color: var(--text); font-weight: 600; cursor: pointer; }
+	.back:hover { background: var(--hover); }
+	.back:focus-visible { outline: 1px solid var(--focus); }
+	.back i { width: 14px; height: 14px; background: currentColor; mask: url(/glyph/chevron-left.png) center / contain no-repeat; -webkit-mask: url(/glyph/chevron-left.png) center / contain no-repeat; }
 	.who { color: var(--textDim); margin-right: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.jt { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border: 0; padding: 6px 12px; border-radius: 8px; color: var(--textDim); font-weight: 600; }
 	.jt img { width: 14px; height: 14px; opacity: 0.8; }

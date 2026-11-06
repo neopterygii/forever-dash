@@ -119,6 +119,8 @@ export interface OverviewChar {
 }
 
 export interface Session {
+	/** Whose session (the journal of everyone mixes them). */
+	char: string;
 	start: number;
 	end: number;
 	seconds: number;
@@ -208,8 +210,9 @@ export const api = {
 	events: (char: string, from: number, to: number, kinds: string[]) => get<DashEvent[]>(`/api/events?${q({ char, from, to, kinds: kinds.join(',') })}`),
 	/** Every character's events in [from, to] (all journal kinds when `kinds` is empty). */
 	allEvents: (from: number, to: number, kinds: string[] = []) => get<DashEvent[]>(`/api/events?${q({ from, to, kinds: kinds.join(',') })}`),
-	/** A page of the journal, newest first: sessions that started before `before` (default: the newest). */
-	journal: (char: string, before?: number, limit = 10) => get<JournalPage>(`/api/journal?${q({ char, limit, ...(before !== undefined ? { before } : {}) })}`),
+	/** A page of one character's journal (everyone's when `char` is undefined), newest first: the sessions after `after` (the last one shown; default: the newest). */
+	journal: (char: string | undefined, after?: Session, limit = 10) =>
+		get<JournalPage>(`/api/journal?${q({ limit, ...(char ? { char } : {}), ...(after ? { before: after.start, beforeChar: after.char } : {}) })}`),
 	quest: (char: string, id: number) => get<QuestInfo>(`/api/quest?${q({ char, id })}`),
 	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
 	addNote: async (char: string, t: number, text: string) => {

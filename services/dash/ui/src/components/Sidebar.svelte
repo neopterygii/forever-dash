@@ -2,8 +2,10 @@
 	import { dash } from '../lib/dash.svelte';
 	import CharacterCard from './CharacterCard.svelte';
 
+	// Picking the selected character again goes back to everyone.
 	function pick(id: string | null) {
-		dash.run(id ? dash.showFocus(id) : dash.showOverview(dash.overview?.hours ?? 6));
+		const again = id && dash.mode === 'focus' && dash.focus?.id === id;
+		dash.run(id && !again ? dash.showFocus(id) : dash.leaveFocus());
 	}
 
 </script>

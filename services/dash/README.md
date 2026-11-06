@@ -29,8 +29,9 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
 - Reads: `GET /api/characters`; `/api/overview?hours=6&tol=8` (the live map: every character's
   last N hours of *playtime*, coarse); `/api/sessions?char=`; `/api/trail?char=&from=&to=&tol=`
   (Douglas-Peucker, split at gaps, teleports and ghost runs); `/api/events?char=&from=&to=&kinds=`;
-  `/api/journal?char=&before=&limit=10` (sessions split at 30 min gaps, newest first, a page at a
-  time: `{ sessions, more }`, `before` = the oldest start shown); `/api/quest?char=&id=` (the quest
+  `/api/journal?char=&before=&beforeChar=&limit=10` (sessions split at 30 min gaps, newest first,
+  a page at a time: `{ sessions, more }`; without `char`, every character's sessions together;
+  `before`/`beforeChar` = the last session shown); `/api/quest?char=&id=` (the quest
   card: Polestar's facts from `names`, the text the character read, giver, rewards, time taken);
   `POST /api/notes`; `GET /api/stats`.
   Everything is kept; only the map is limited to a playtime buffer.

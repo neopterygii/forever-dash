@@ -96,15 +96,18 @@ struct CharQ {
 
 #[derive(Deserialize)]
 struct JournalQ {
-	char: String,
-	/// Sessions that started before this time (the oldest one already shown); none = the newest.
+	/// One character's journal; none = every character's sessions together.
+	char: Option<String>,
+	/// The last session shown (its start and character): the page goes on after it; none = the newest.
 	before: Option<f64>,
+	#[serde(rename = "beforeChar")]
+	before_char: Option<String>,
 	limit: Option<usize>,
 }
 
 async fn journal(State(db): State<Db>, Query(q): Query<JournalQ>) -> Response {
 	let limit = q.limit.unwrap_or(read::JOURNAL_PAGE).clamp(1, 200);
-	read::journal(&db.lock().unwrap(), &q.char, q.before, limit).map(Json).map_or_else(err500, IntoResponse::into_response)
+	read::journal(&db.lock().unwrap(), q.char.as_deref().filter(|c| !c.is_empty()), q.before.map(|b| (b, q.before_char.as_deref().unwrap_or(""))), limit).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]

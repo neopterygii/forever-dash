@@ -25,7 +25,10 @@
 		dash.sheet = null;
 	}
 	function onkey(e: KeyboardEvent) {
-		if (e.key === 'Escape' && dash.sheet) close();
+		if (e.key === 'Escape' && dash.sheet) {
+			e.preventDefault();
+			close();
+		}
 	}
 
 	// The game's character sheet: two columns of slots beside the portrait, the weapons under it.

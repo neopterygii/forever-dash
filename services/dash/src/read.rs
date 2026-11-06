@@ -344,16 +344,28 @@ fn giver_of(f: &[String]) -> Option<(&'static str, i64)> {
 /// Journal sessions per page (the newest first) unless the caller asks for another number.
 pub const JOURNAL_PAGE: usize = 10;
 
-/// One page of the character's journal: up to `limit` sessions that started before `before`
-/// (all when None), newest first, and whether older ones remain.
-pub fn journal(db: &Connection, char_id: &str, before: Option<f64>, limit: usize) -> rusqlite::Result<Value> {
+/// One page of the journal of one character, or of every character together (`char_id` None):
+/// up to `limit` sessions after the cursor `before` (the last one shown: its start and character;
+/// None = the newest), newest first (same start: by character), and whether older ones remain.
+pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str)>, limit: usize) -> rusqlite::Result<Value> {
 	let frames = frames(db)?;
-	let sex = char_sex(db, char_id);
-	let all = sessions(db, char_id)?;
-	let older: Vec<(f64, f64)> = all.into_iter().filter(|s| before.is_none_or(|b| s.0 < b)).collect();
+	let ids: Vec<String> = match char_id {
+		Some(c) => vec![c.to_string()],
+		None => db.prepare("SELECT char_id FROM characters")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?,
+	};
+	let mut older: Vec<(f64, f64, String)> = Vec::new();
+	for id in &ids {
+		older.extend(
+			sessions(db, id)?.into_iter().filter(|s| before.is_none_or(|(b, bc)| s.0 < b || (s.0 == b && id.as_str() > bc))).map(|(a, b)| (a, b, id.clone())),
+		);
+	}
+	older.sort_by(|x, y| y.0.total_cmp(&x.0).then_with(|| x.2.cmp(&y.2)));
 	let more = older.len() > limit;
+	let mut sexes: HashMap<String, Option<i64>> = HashMap::new();
 	let mut out = Vec::new();
-	for (start, end) in older.into_iter().rev().take(limit) {
+	for (start, end, id) in older.into_iter().take(limit) {
+		let char_id = id.as_str();
+		let sex = *sexes.entry(id.clone()).or_insert_with(|| char_sex(db, char_id));
 		let mut st = db.prepare("SELECT t, kind, map, x, y, fields FROM events WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 		let rows = st.query_map(params![char_id, start, end], |r| {
 			Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?, r.get::<_, String>(5)?))
@@ -419,7 +431,7 @@ pub fn journal(db: &Connection, char_id: &str, before: Option<f64>, limit: usize
 			.collect::<Result<_, _>>()?;
 		let (dist, _) = distance(db, &frames, char_id, start, end)?;
 		out.push(json!({
-			"start": start, "end": end, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
+			"char": char_id, "start": start, "end": end, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
 		}));
 	}

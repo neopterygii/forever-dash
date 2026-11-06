@@ -110,7 +110,38 @@ class Dash {
 		const [chars, stats] = await Promise.all([api.characters(), api.stats()]);
 		this.chars = chars;
 		this.stats = stats;
-		await this.showOverview(6);
+		await this.applyLocation();
+	}
+
+	// The selected character lives in the address (#c=<id>): Back leaves a character for the
+	// overview (or the one before), and a reload or a shared link opens the same character.
+
+	/** The character the address names, if it is one we know. */
+	private locationChar(): string | null {
+		const id = new URLSearchParams(location.hash.slice(1)).get('c');
+		return id && this.chars.some((c) => c.id === id) ? id : null;
+	}
+
+	/** Shows what the address names (at load and on Back/Forward). */
+	async applyLocation() {
+		const id = this.locationChar();
+		if (id) {
+			if (this.mode !== 'focus' || this.focus?.id !== id) await this.showFocus(id);
+		} else if (this.mode !== 'overview' || !this.overview) {
+			await this.showOverview(this.overview?.hours ?? 6);
+		}
+	}
+
+	/** A new history entry when the selection changed (not for a new buffer of the same one). */
+	private syncLocation() {
+		const want = this.mode === 'focus' && this.focus ? `#c=${encodeURIComponent(this.focus.id)}` : '';
+		if (location.hash === want || (!want && !location.hash)) return;
+		history.pushState(null, '', want || location.pathname + location.search);
+	}
+
+	/** Back to every character (the sidebar's "All characters", the top bar's button, Esc). */
+	leaveFocus() {
+		return this.showOverview(this.overview?.hours ?? 6);
 	}
 
 	private async loadOverview(hours: number) {
@@ -130,6 +161,7 @@ class Dash {
 		this.mode = 'overview';
 		this.focus = null;
 		this.setTimeline(this.overview!.characters.flatMap((c) => c.sessions));
+		this.syncLocation();
 	}
 
 	async showFocus(id: string, buffer: FocusBuffer = 'session') {
@@ -147,6 +179,7 @@ class Dash {
 		const [trail, events] = await Promise.all([api.trail(id, from, to), api.events(id, from, to, Object.keys(PIN))]);
 		this.focus = { id, buffer, sessions, from, to, trails: prep(trail.segments), events, points: trail.points, kept: trail.kept };
 		this.mode = 'focus';
+		this.syncLocation();
 		this.setTimeline(sessions.filter(([a, b]) => b >= from && a <= to).map(([a, b]): Span => [Math.max(a, from), Math.min(b, to)]));
 	}
 
