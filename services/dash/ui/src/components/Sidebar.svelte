@@ -16,7 +16,7 @@
 			<button class="all" onclick={() => pick(null)}><span class="n">All characters</span></button>
 		</li>
 		{#each dash.chars as c (c.id)}
-			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} onpick={() => pick(c.id)} onopen={(view) => (dash.sheet = { id: c.id, view })} />
+			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} color={dash.colorOf(c.id)} onpick={() => pick(c.id)} onopen={(view) => (dash.sheet = { id: c.id, view })} />
 		{/each}
 	</ul>
 	{#if dash.stats}

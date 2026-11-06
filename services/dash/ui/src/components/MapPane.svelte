@@ -4,15 +4,24 @@
 	import { onMount } from 'svelte';
 	import { dash, FOCUS_BUFFERS, OVERVIEW_BUFFERS, PIN } from '../lib/dash.svelte';
 	import type { DashEvent } from '../lib/api';
-	import { continentOffset, createMapView, type Dot, type MapViewApi, type Marker } from '../lib/mapview';
+	import { continentOffset, createMapView, type MapViewApi } from '../lib/mapview';
+	import { TrailOverlay, type OverlayEvent, type OverlayLine, type OverlayPin } from '../lib/overlay';
 	import { installWorldMap, mapChoices, mapOf, showMap, shownMap, type MapChoice } from '../lib/worldmap';
-	import { inSessions, posAt, split, type Route } from '../lib/timeline';
+	import { inSessions, posAt, split } from '../lib/timeline';
 	import { day, hhmm } from '../lib/format';
 
-	const DOT_TINT: Record<string, string> = { death: 'danger', level: 'success', mark: 'accent', enter: 'dungeon', encounter: 'dungeon' };
+	/** Event badge colours (the overview shows level, death and mark; a focus every journal kind). */
+	const EVENT_COLOR: Record<string, string> = {
+		death: '#f57373', mark: '#e6ba66', accept: '#ffd673', turnin: '#ffd673', explore: '#f5ad85', enter: '#a385ff', encounter: '#a385ff',
+		taxi: '#94c9ff', bind: '#94c9ff', learn: '#78dbed', rare: '#ff8052', abandon: '#9ba2b9',
+	};
+	const OVERVIEW_EVENTS = new Set(['level', 'death', 'mark']);
+	const levelOf = (text: string) => /level (\d+)/i.exec(text)?.[1];
 
 	let { visible }: { visible: boolean } = $props();
 	let canvas: HTMLCanvasElement;
+	let overlayCanvas: HTMLCanvasElement;
+	let overlay = $state.raw<TrailOverlay | null>(null);
 	let map = $state.raw<MapViewApi | null>(null);
 	let noGL = $state(false);
 	let info = $state.raw<DashEvent | null>(null);
@@ -38,54 +47,61 @@
 				view.setMode('world');
 				choices = mapChoices(view);
 				shown = shownMap(view);
-				view.on('marker', ({ marker }) => {
-					if (marker.kind === 'char') dash.run(dash.showFocus(marker.charId as string));
-					if (marker.kind === 'event') info = marker.ev as DashEvent;
+				// Trails, events and pins are ours (lib/overlay.ts), drawn over the map: clicks are hit-tested there.
+				view.on('pick', ({ sx, sy }) => {
+					const hit = overlay?.hit(sx, sy) ?? null;
+					if (hit?.kind === 'pin') dash.run(dash.showFocus(hit.pin.id));
+					else if (hit?.kind === 'event') info = hit.event.data as DashEvent;
+					else info = null;
 				});
-				view.on('pick', ({ hit }) => {
-					if (!hit) info = null;
-				});
+				overlay = new TrailOverlay(overlayCanvas, view);
 				map = view;
 			})
 			.catch(() => (noGL = true));
-		return () => view.destroy();
+		return () => {
+			overlay?.destroy();
+			view.destroy();
+		};
 	});
 
-	// Draw: everything the map shows at dash.t.
+	// Draw: everything the overlay shows at dash.t.
 	$effect(() => {
-		if (!map) return;
+		if (!overlay) return;
 		const t = dash.t;
 		const live = !!dash.timeline && t >= dash.timeline.end - 1;
-		const routes: Route[] = [];
-		const markers: Marker[] = [];
-		const dots: Dot[] = [];
-		let arrow = null;
+		const lines: OverlayLine[] = [];
+		const events: OverlayEvent[] = [];
+		const pins: OverlayPin[] = [];
+		const addLines = (id: string, trails: Parameters<typeof split>[0]) => {
+			const color = dash.colorOf(id);
+			for (const r of split(trails, t)) lines.push({ c: r.c, pts: r.pts, color, faint: r.state === 'future', ghost: r.mode === 'fly' });
+		};
+		const addEvent = (e: DashEvent, id: string, all: boolean) => {
+			if (e.t > t || e.pos?.c === undefined || (!all && !OVERVIEW_EVENTS.has(e.kind))) return;
+			if (e.kind !== 'level' && !EVENT_COLOR[e.kind]) return;
+			events.push({ c: e.pos.c, wx: e.pos.wx!, wy: e.pos.wy!, kind: e.kind, label: e.kind === 'level' ? levelOf(e.text) : undefined, color: EVENT_COLOR[e.kind] ?? dash.colorOf(id), data: e });
+		};
+		const level = (id: string) => dash.chars.find((c) => c.id === id)?.level ?? null;
 		if (dash.mode === 'overview' && dash.overview) {
 			for (const c of dash.overview.characters) {
-				split(c.trails, t, routes);
+				addLines(c.char, c.trails);
+				for (const e of c.events) addEvent(e, c.char, false);
 				const p = posAt(c.trails, t);
-				const online = inSessions(c.sessions, t);
-				if (p) markers.push({ kind: 'char', charId: c.char, step: c.char, c: p.c, wx: p.wx, wy: p.wy, icon: null, glyph: 'character', tint: online ? 'npc' : 'textMuted', label: dash.name(c.char), active: online || live, done: !online && !live });
-				for (const e of c.events) if (e.t <= t && e.pos?.c !== undefined) dots.push({ c: e.pos.c, wx: e.pos.wx!, wy: e.pos.wy!, tint: DOT_TINT[e.kind] || 'textDim' });
+				if (p) pins.push({ id: c.char, c: p.c, wx: p.wx, wy: p.wy, name: dash.name(c.char), level: level(c.char), color: dash.colorOf(c.char), online: inSessions(c.sessions, t) || live });
 			}
 		} else if (dash.mode === 'focus' && dash.focus) {
 			const f = dash.focus;
-			split(f.trails, t, routes);
-			arrow = posAt(f.trails, t);
 			for (const c of dash.overview?.characters ?? []) {
 				if (c.char === f.id) continue;
 				const p = posAt(c.trails, t);
-				if (p) markers.push({ kind: 'char', charId: c.char, step: c.char, c: p.c, wx: p.wx, wy: p.wy, icon: null, glyph: 'character', tint: 'textMuted', label: dash.name(c.char), done: true });
+				if (p) pins.push({ id: c.char, c: p.c, wx: p.wx, wy: p.wy, name: dash.name(c.char), level: level(c.char), color: dash.colorOf(c.char), online: false });
 			}
-			for (const e of f.events) {
-				if (e.t > t || e.pos?.c === undefined) continue;
-				const [glyph, tint] = PIN[e.kind] ?? ['icon-note', 'textDim'];
-				markers.push({ kind: 'event', ev: e, step: `${e.kind}:${e.t}`, c: e.pos.c, wx: e.pos.wx!, wy: e.pos.wy!, icon: null, glyph, tint });
-			}
+			addLines(f.id, f.trails);
+			for (const e of f.events) addEvent(e, f.id, true);
+			const a = posAt(f.trails, t);
+			if (a) pins.push({ id: f.id, c: a.c, wx: a.wx, wy: a.wy, name: dash.name(f.id), level: level(f.id), color: dash.colorOf(f.id), online: inSessions(f.sessions, t) || live, heading: a.heading });
 		}
-		map.setRoute(routes);
-		map.setScene({ markers, dots });
-		map.setCharacter(arrow ? { c: arrow.c, wx: arrow.wx, wy: arrow.wy, heading: arrow.heading } : null);
+		overlay.set({ lines, events, pins });
 	});
 
 	// Fit the view when new data asks for it: the trails on the map with the most of them (Azeroth, or
@@ -143,6 +159,7 @@
 	});
 
 	const live = $derived(!!dash.timeline && dash.t >= dash.timeline.end - 1);
+	const legendIds = $derived(dash.mode === 'focus' && dash.focus ? [dash.focus.id] : (dash.overview?.characters.map((c) => c.char) ?? []));
 	const offline = $derived(dash.mode === 'focus' && !!dash.focus && !inSessions(dash.focus.sessions, dash.t));
 	const sliderValue = $derived(dash.timeline ? Math.round(dash.timeline.toU(dash.t) * 1000) : 1000);
 	const ticks = $derived(dash.timeline?.ticks() ?? []);
@@ -165,19 +182,18 @@
 
 <section class="pane" class:on={visible}>
 	<canvas bind:this={canvas}></canvas>
+	<canvas class="overlay" bind:this={overlayCanvas}></canvas>
 	{#if choices.length > 1}
 		<select class="mapsel" aria-label="Map" value={String(shown)} onchange={(e) => pickMap(e.currentTarget.value)}>
 			{#each choices as c (c.value)}<option value={String(c.value)}>{c.name}</option>{/each}
 		</select>
 	{/if}
 	<div class="legend">
-		<span><b class="sw route"></b>trail</span>
+		{#each legendIds as id (id)}
+			<span><b class="sw" style:background={dash.colorOf(id)}></b>{dash.name(id)}</span>
+		{/each}
 		<span><b class="sw ghost"></b>ghost run</span>
-		{#if dash.mode === 'overview'}
-			<span><b class="dot success"></b>level</span><span><b class="dot danger"></b>death</span><span><b class="dot accent"></b>mark</span>
-		{:else}
-			<span><b class="dot quest"></b>events: click a pin</span>
-		{/if}
+		<span><b class="star">★</b>level</span>
 	</div>
 	{#if info}
 		<div class="info"><time>{day(info.t)} {hhmm(info.t)} · {dash.name(info.char)}</time>{info.text}</div>
@@ -205,18 +221,14 @@
 	.pane { display: none; position: relative; min-height: 0; height: 100%; }
 	.pane.on { display: block; }
 	canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+	canvas.overlay { pointer-events: none; }
 	.mapsel { position: absolute; top: 12px; left: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-weight: 600; box-shadow: var(--window-shadow); }
 	.info { top: 52px !important; }
 	.legend { position: absolute; top: 12px; right: 12px; display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: var(--well); font-size: 11px; color: var(--textDim); pointer-events: none; }
 	.legend span { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { display: inline-block; width: 16px; height: 3px; border-radius: 2px; }
-	.sw.route { background: var(--route-past); }
-	.sw.ghost { background: var(--route-fly); }
-	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-	.dot.danger { background: var(--danger); }
-	.dot.success { background: var(--success); }
-	.dot.quest { background: var(--quest); }
-	.dot.accent { background: var(--accent); }
+	.sw.ghost { background: repeating-linear-gradient(90deg, var(--textDim) 0 2px, transparent 2px 6px); }
+	.star { color: #f6c544; font-size: 12px; }
 	.info { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }
 	.info time { display: block; color: var(--textMuted); font-size: 11px; }
 	.player { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }

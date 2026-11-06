@@ -13,10 +13,11 @@
 import type { MapViewApi } from './mapview';
 
 /** CSS px per yard where zone maps fade in over the world painting ... */
-const ZONES_IN: [number, number] = [0.045, 0.09];
-/** ... where the world painting under them (the sea between zones) gives way to the terrain ... */
-const WORLD_OUT: [number, number] = [0.12, 0.25];
-/** ... and where the zone maps give way to the terrain. */
+const ZONES_IN: [number, number] = [0.04, 0.08];
+/** ... where the world painting gives way (blurry closer in; the sea between zone maps is then the
+ *  painting's ocean colour, as a flat fill: the terrain's own sea is near black) ... */
+const WORLD_OUT: [number, number] = [0.07, 0.13];
+/** ... and where the zone maps and that sea give way to the terrain. */
 const TERRAIN_IN: [number, number] = [0.5, 1.1];
 /** Below this zoom the terrain is off: the painting covers the continents, and the terrain's far
  *  tiles (sea filled near black) would show around it. */
@@ -179,6 +180,17 @@ export function installWorldMap(view: MapViewApi): boolean {
 		view.on('view', (v) => setTerrain(v.zoom));
 		m._changed?.(true);
 	}
+	// The ocean fill: a 1x1 texture of the painting's ocean colour, stretched over the painting.
+	let sea: WebGLTexture | null = null;
+	const seaRect = world && m.offsets?.has(0) ? { o: m.offsets!.get(0)!, w: world.w, h: world.h } : null;
+	if (world?.sea && seaRect) {
+		const gl = art.gl;
+		sea = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, sea);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([...world.sea, 255]));
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	}
 	art.draw = function (f: Frame, quad: Quad): boolean {
 		const zonesIn = smooth(ZONES_IN, f.zoom);
 		const worldAlpha = 1 - smooth(WORLD_OUT, f.zoom);
@@ -191,6 +203,10 @@ export function installWorldMap(view: MapViewApi): boolean {
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		quad.begin(f);
 		let pending = false;
+		// The sea under the zone maps (only with Azeroth shown: the painting's continents laid out).
+		const seaAlpha = zoneAlpha;
+		const o0 = offs.get('0');
+		if (sea && seaRect && seaAlpha > 0.002 && o0 && m.__dashMap === 'azeroth') quad.draw(sea, o0.ox - seaRect.o.ox, o0.oy - seaRect.o.oy, o0.ox - seaRect.o.ox + seaRect.w, o0.oy - seaRect.o.oy + seaRect.h, 0, 0, 1, 1, seaAlpha);
 		// The world first, then zones largest first; the zone under the view centre last, so it is whole.
 		const under = (z: Zone, o: { ox: number; oy: number }) => f.cx >= z.x0 + o.ox && f.cx <= z.x1 + o.ox && f.cy >= z.y0 + o.oy && f.cy <= z.y1 + o.oy;
 		const order = [...this.zones.filter((z) => offs.has(z.c) && (z.world || !under(z, offs.get(z.c)!))), ...this.zones.filter((z) => !z.world && offs.has(z.c) && under(z, offs.get(z.c)!))];
