@@ -17,7 +17,8 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const REPO: &str = "fitzforge/polestar";
+// forever-dash: addon releases (our overlay builds) and client updates come from the fork.
+pub const REPO: &str = "neopterygii/forever-dash";
 /// The largest zip this client will take (Polestar with its walking maps is tens of MB).
 const MAX_ZIP: u64 = 512 * 1024 * 1024;
 pub(crate) const STAGING: &str = ".polestar-client-staging";
