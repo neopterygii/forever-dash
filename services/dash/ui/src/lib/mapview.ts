@@ -37,10 +37,11 @@ export interface MapViewApi {
 	setMode(mode: 'world' | 'continent'): void;
 	fitWorld(c: number, pts: [number, number][], opts?: { padding?: number; maxZoom?: number; animate?: boolean }): void;
 	resize(): void;
+	toScreen(c: number, wx: number, wy: number): { x: number; y: number } | null;
 	setLayer(name: 'terrain' | 'zoneArt' | 'labels' | 'grid', on: boolean): void;
 	destroy(): void;
 	on(event: 'marker', fn: (e: { marker: Marker }) => void): () => void;
-	on(event: 'pick', fn: (e: { hit: unknown }) => void): () => void;
+	on(event: 'pick', fn: (e: { hit: unknown; sx: number; sy: number }) => void): () => void;
 	on(event: 'view', fn: (v: { mode: string; c: number; zoom: number }) => void): () => void;
 }
 

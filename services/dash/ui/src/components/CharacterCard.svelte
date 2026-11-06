@@ -3,7 +3,7 @@
 	import type { Character } from '../lib/api';
 	import { ago, className, classIconUrl, fullName, gold, portraitUrl, raceName, realmName } from '../lib/format';
 
-	let { c, selected, onpick, onopen }: { c: Character; selected: boolean; onpick: () => void; onopen: (view: 'gear' | 'bags') => void } = $props();
+	let { c, selected, color, onpick, onopen }: { c: Character; selected: boolean; color: string; onpick: () => void; onopen: (view: 'gear' | 'bags') => void } = $props();
 
 	const portrait = $derived(portraitUrl(c.race, c.sex));
 	const classIcon = $derived(classIconUrl(c.class));
@@ -23,7 +23,7 @@
 			<span class="lv" title="Level">{c.level ?? '?'}</span>
 		</span>
 		<span class="text">
-			<span class="n">{fullName(c)}</span>
+			<span class="n"><b class="dot" style:background={color}></b>{fullName(c)}</span>
 			<span class="sub">{raceName(c.race)} {className(c.class)}{realm ? ` · ${realm}` : ''}{c.money != null ? ` · ${gold(c.money)}` : ''}</span>
 			{#if xpPct != null}
 				<span class="xp" title="{c.xp} / {c.xpMax} XP{c.rested ? ` · ${c.rested} rested` : ''}">
@@ -51,6 +51,7 @@
 	.cls { position: absolute; right: -4px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 0 0 2px var(--sidebar); }
 	.lv { position: absolute; left: -4px; bottom: -2px; min-width: 20px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--sidebar); color: var(--accent); font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 1px var(--border); font-variant-numeric: tabular-nums; }
 	.text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
 	.n { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.sub { color: var(--textDim); font-size: 12px; }
 	.seen { color: var(--textMuted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

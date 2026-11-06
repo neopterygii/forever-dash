@@ -6,6 +6,7 @@
 //   faint. Its buffer defaults to the last session and can grow to all play.
 import { api, prep, type Character, type DashEvent, type OverviewChar, type Span, type Stats, type Trail } from './api';
 import { Timeline, playtimeFrom } from './timeline';
+import { PALETTE } from './overlay';
 
 export type Mode = 'overview' | 'focus';
 /** 'session' | hours as a string | 'all' | 's:<start>:<end>' (one session, from the journal). */
@@ -64,6 +65,12 @@ class Dash {
 	/** Bumped to ask the map to fit its view to what is loaded. */
 	fitRequest = $state(0);
 	error = $state<string | null>(null);
+
+	/** The character's colour on the map and its card (lib/overlay.ts PALETTE). */
+	colorOf(id: string): string {
+		const i = this.chars.findIndex((c) => c.id === id);
+		return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
+	}
 
 	name(id: string): string {
 		const c = this.chars.find((x) => x.id === id);

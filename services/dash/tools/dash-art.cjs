@@ -186,8 +186,9 @@ build.exports
 		// Continent-size maps (an earlier version's) are not drawn: the world map is the backdrop.
 		for (const [id, z] of Object.entries(index.zones)) if (Math.abs((z.frame.left - z.frame.right) * (z.frame.top - z.frame.bottom)) >= CONTINENT_AREA) delete index.zones[id];
 		const img = decodePng(fs.readFileSync(path.join(out, world.file)));
-		const sea = [[0.03, 0.05], [0.5, 0.03], [0.97, 0.05], [0.5, 0.97]].map(([u, v]) => {
-			const k = ((Math.round(v * (img.h - 1)) * img.w + Math.round(u * (img.w - 1))) * 4);
+		// The painting's open ocean (between the continents), for the sea between zone maps at region scale.
+		const sea = [[0.47, 0.2], [0.47, 0.8], [0.42, 0.5], [0.53, 0.62], [0.5, 0.35], [0.45, 0.65]].map(([u, v]) => {
+			const k = (Math.round(v * (img.h - 1)) * img.w + Math.round(u * (img.w - 1))) * 4;
 			return [img.rgba[k], img.rgba[k + 1], img.rgba[k + 2]];
 		});
 		index.world = { file: world.file, w: world.w, h: world.h, sea: [0, 1, 2].map((i) => Math.round(sea.reduce((a, p) => a + p[i], 0) / sea.length)), ...worldLayout() };

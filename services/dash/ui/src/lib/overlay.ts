@@ -1,0 +1,357 @@
+// Trails, event markers and character pins drawn on a 2D canvas over MapView (which draws the map
+// itself): a line per character in its own colour with a dark casing and direction chevrons, the
+// part after the replay time faint; level-ups as numbered starbursts; other events as small
+// badges; characters as pins with a name pill. Redrawn whenever the map's camera or the data
+// changes (checked every animation frame). Projection: MapView's own toScreen, as an affine map
+// per continent from three points (exact: MapView's view is linear in world yards).
+import type { MapViewApi } from './mapview';
+
+export interface OverlayLine {
+	c: number;
+	/** Flat wx, wy pairs. */
+	pts: ArrayLike<number>;
+	color: string;
+	faint: boolean;
+	ghost: boolean;
+}
+export interface OverlayEvent {
+	c: number;
+	wx: number;
+	wy: number;
+	kind: string;
+	/** A starburst's number (the level reached). */
+	label?: string;
+	color: string;
+	data?: unknown;
+}
+export interface OverlayPin {
+	c: number;
+	wx: number;
+	wy: number;
+	name: string;
+	level: number | null;
+	color: string;
+	/** Playing at the replay time (bright), else where last seen (dim). */
+	online: boolean;
+	/** The focused character: drawn as an arrow turned to its heading (radians, clockwise from north). */
+	heading?: number;
+	id: string;
+}
+export interface OverlayData {
+	lines: OverlayLine[];
+	events: OverlayEvent[];
+	pins: OverlayPin[];
+}
+export type Hit = { kind: 'pin'; pin: OverlayPin } | { kind: 'event'; event: OverlayEvent } | null;
+
+type Affine = { x0: number; y0: number; ax: number; ay: number; bx: number; by: number; wx0: number; wy0: number };
+
+const CHEVRON_EVERY = 64; // px between direction chevrons
+/** Zoom (CSS px per yard) from which event badges show; level starbursts from LEVELS_FROM. Further
+ *  out they would pile up into clutter at world scale. */
+const EVENTS_FROM = 0.06;
+const LEVELS_FROM = 0.035;
+const MIN_STEP = 1.5; // px: closer points are merged
+
+export class TrailOverlay {
+	private ctx: CanvasRenderingContext2D;
+	private data: OverlayData = { lines: [], events: [], pins: [] };
+	private dirty = true;
+	private raf = 0;
+	private lastView = '';
+	private w = 0;
+	private h = 0;
+	private zoom = 1;
+	private pills: [number, number, number, number][] = [];
+	private shown: { kind: 'pin' | 'event'; x: number; y: number; r: number; ref: OverlayPin | OverlayEvent }[] = [];
+	private resize: ResizeObserver;
+
+	constructor(
+		private canvas: HTMLCanvasElement,
+		private map: MapViewApi,
+	) {
+		this.ctx = canvas.getContext('2d')!;
+		this.resize = new ResizeObserver(() => this.fit());
+		this.resize.observe(canvas);
+		this.fit();
+		const loop = () => {
+			this.raf = requestAnimationFrame(loop);
+			const v = (this.map as unknown as { view: { x: number; y: number; zoom: number; c: number } }).view;
+			const key = v ? `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.zoom.toFixed(6)},${v.c}` : '';
+			if (this.dirty || key !== this.lastView) {
+				this.lastView = key;
+				this.dirty = false;
+				this.draw();
+			}
+		};
+		this.raf = requestAnimationFrame(loop);
+	}
+
+	destroy() {
+		cancelAnimationFrame(this.raf);
+		this.resize.disconnect();
+	}
+
+	set(data: OverlayData) {
+		this.data = data;
+		this.dirty = true;
+	}
+
+	/** What is under a point in CSS px of the canvas: pins first, then events. */
+	hit(sx: number, sy: number): Hit {
+		for (let i = this.shown.length - 1; i >= 0; i--) {
+			const s = this.shown[i];
+			if (Math.hypot(s.x - sx, s.y - sy) <= s.r) return s.kind === 'pin' ? { kind: 'pin', pin: s.ref as OverlayPin } : { kind: 'event', event: s.ref as OverlayEvent };
+		}
+		return null;
+	}
+
+	private fit() {
+		const r = this.canvas.getBoundingClientRect();
+		const dpr = window.devicePixelRatio || 1;
+		this.w = r.width;
+		this.h = r.height;
+		this.canvas.width = Math.round(r.width * dpr);
+		this.canvas.height = Math.round(r.height * dpr);
+		this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		this.dirty = true;
+	}
+
+	private affine(c: number, wx0: number, wy0: number): Affine | null {
+		const p = this.map.toScreen(c, wx0, wy0);
+		const px = this.map.toScreen(c, wx0 + 1000, wy0);
+		const py = this.map.toScreen(c, wx0, wy0 + 1000);
+		if (!p || !px || !py) return null;
+		return { x0: p.x, y0: p.y, ax: (px.x - p.x) / 1000, ay: (px.y - p.y) / 1000, bx: (py.x - p.x) / 1000, by: (py.y - p.y) / 1000, wx0, wy0 };
+	}
+
+	private draw() {
+		const ctx = this.ctx;
+		ctx.clearRect(0, 0, this.w, this.h);
+		this.shown = [];
+		this.pills = [];
+		this.zoom = (this.map as unknown as { view?: { zoom: number } }).view?.zoom ?? 1;
+		const cache = new Map<number, Affine | null>();
+		const proj = (c: number, wx: number, wy: number): [number, number] | null => {
+			if (!cache.has(c)) cache.set(c, this.affine(c, wx, wy));
+			const a = cache.get(c);
+			if (!a) return null;
+			const dx = wx - a.wx0, dy = wy - a.wy0;
+			return [a.x0 + a.ax * dx + a.bx * dy, a.y0 + a.ay * dx + a.by * dy];
+		};
+		const { lines, events, pins } = this.data;
+		for (const l of lines.filter((l) => l.faint)) this.line(l, proj);
+		for (const l of lines.filter((l) => !l.faint)) this.line(l, proj);
+		for (const e of events) this.event(e, proj);
+		for (const p of [...pins].sort((a, b) => Number(a.online) - Number(b.online) || Number(a.heading !== undefined) - Number(b.heading !== undefined))) this.pin(p, proj);
+	}
+
+	private screenPts(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null): [number, number][] {
+		const out: [number, number][] = [];
+		for (let i = 0; i + 1 < l.pts.length; i += 2) {
+			const p = proj(l.c, l.pts[i], l.pts[i + 1]);
+			if (!p) return [];
+			const last = out[out.length - 1];
+			if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= MIN_STEP || i + 2 >= l.pts.length) out.push(p);
+		}
+		return out;
+	}
+
+	private line(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
+		const pts = this.screenPts(l, proj);
+		if (pts.length < 2) return;
+		const ctx = this.ctx;
+		const path = () => {
+			ctx.beginPath();
+			ctx.moveTo(pts[0][0], pts[0][1]);
+			for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+		};
+		ctx.save();
+		ctx.lineJoin = 'round';
+		ctx.lineCap = 'round';
+		ctx.globalAlpha = l.faint ? 0.35 : 1;
+		if (l.ghost) ctx.setLineDash([2, 6]);
+		// casing, then the colour
+		path();
+		ctx.strokeStyle = 'rgba(8, 14, 24, 0.75)';
+		ctx.lineWidth = l.ghost ? 5 : 6;
+		ctx.stroke();
+		path();
+		ctx.strokeStyle = l.color;
+		ctx.lineWidth = l.ghost ? 2.5 : 3.2;
+		ctx.stroke();
+		ctx.setLineDash([]);
+		// direction chevrons along the line
+		if (!l.faint) {
+			let carry = CHEVRON_EVERY / 2;
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+			ctx.lineWidth = 1.6;
+			for (let i = 1; i < pts.length; i++) {
+				const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+				const len = Math.hypot(x1 - x0, y1 - y0);
+				if (len < 0.01) continue;
+				const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+				let d = carry;
+				while (d < len) {
+					const cx = x0 + ux * d, cy = y0 + uy * d;
+					ctx.beginPath();
+					ctx.moveTo(cx - ux * 4 - uy * 3.5, cy - uy * 4 + ux * 3.5);
+					ctx.lineTo(cx + ux * 1.5, cy + uy * 1.5);
+					ctx.lineTo(cx - ux * 4 + uy * 3.5, cy - uy * 4 - ux * 3.5);
+					ctx.stroke();
+					d += CHEVRON_EVERY;
+				}
+				carry = d - len;
+			}
+		}
+		ctx.restore();
+	}
+
+	private glow(x: number, y: number, r: number, color: string, alpha = 0.45) {
+		const ctx = this.ctx;
+		const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+		g.addColorStop(0, color);
+		g.addColorStop(1, 'transparent');
+		ctx.save();
+		ctx.globalAlpha = alpha;
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
+	}
+
+	private event(e: OverlayEvent, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
+		if (this.zoom < (e.kind === 'level' ? LEVELS_FROM : EVENTS_FROM)) return;
+		const p = proj(e.c, e.wx, e.wy);
+		if (!p || p[0] < -30 || p[1] < -30 || p[0] > this.w + 30 || p[1] > this.h + 30) return;
+		const [x, y] = p;
+		const ctx = this.ctx;
+		if (e.kind === 'level') {
+			// a gold starburst with the level
+			this.glow(x, y, 22, '#ffe08a', 0.5);
+			ctx.save();
+			ctx.beginPath();
+			const n = 10;
+			for (let i = 0; i < n * 2; i++) {
+				const r = i % 2 ? 7.5 : 13;
+				const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+				ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * r, y + Math.sin(a) * r);
+			}
+			ctx.closePath();
+			ctx.fillStyle = '#f6c544';
+			ctx.strokeStyle = 'rgba(40, 24, 0, 0.85)';
+			ctx.lineWidth = 1.4;
+			ctx.fill();
+			ctx.stroke();
+			ctx.fillStyle = '#1b1204';
+			ctx.font = '700 11px Inter, system-ui, sans-serif';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(e.label ?? '', x, y + 0.5);
+			ctx.restore();
+			this.shown.push({ kind: 'event', x, y, r: 13, ref: e });
+			return;
+		}
+		// a small round badge in the event's colour, with its sign
+		const sign: Record<string, string> = { death: '✕', mark: '★', accept: '!', turnin: '?', explore: '◆', enter: '⌂', encounter: '☠', taxi: '➶', bind: '⌂', learn: '✦', rare: '◎' };
+		this.glow(x, y, 14, e.color, 0.35);
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(x, y, 7.5, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(10, 14, 24, 0.92)';
+		ctx.fill();
+		ctx.lineWidth = 1.8;
+		ctx.strokeStyle = e.color;
+		ctx.stroke();
+		ctx.fillStyle = e.color;
+		ctx.font = '700 9px Inter, system-ui, sans-serif';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(sign[e.kind] ?? '•', x, y + 0.5);
+		ctx.restore();
+		this.shown.push({ kind: 'event', x, y, r: 10, ref: e });
+	}
+
+	private pin(pin: OverlayPin, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
+		const p = proj(pin.c, pin.wx, pin.wy);
+		if (!p) return;
+		const [x, y] = p;
+		const ctx = this.ctx;
+		ctx.save();
+		ctx.globalAlpha = pin.online || pin.heading !== undefined ? 1 : 0.6;
+		this.glow(x, y, 20, pin.color, 0.5);
+		if (pin.heading !== undefined) {
+			// the focused character: an arrow in its colour, turned to its heading
+			ctx.translate(x, y);
+			ctx.rotate(pin.heading);
+			ctx.beginPath();
+			ctx.moveTo(0, -11);
+			ctx.lineTo(7.5, 8);
+			ctx.lineTo(0, 4);
+			ctx.lineTo(-7.5, 8);
+			ctx.closePath();
+			ctx.fillStyle = pin.color;
+			ctx.strokeStyle = 'rgba(8, 14, 24, 0.9)';
+			ctx.lineWidth = 2;
+			ctx.fill();
+			ctx.stroke();
+			ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+		} else {
+			ctx.beginPath();
+			ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+			ctx.fillStyle = pin.color;
+			ctx.strokeStyle = 'rgba(8, 14, 24, 0.9)';
+			ctx.lineWidth = 2;
+			ctx.fill();
+			ctx.stroke();
+		}
+		// the name pill, to the right: name, level, a dot in the character's colour
+		ctx.font = '600 12px Inter, system-ui, sans-serif';
+		const level = pin.level != null ? ` ${pin.level}` : '';
+		const tw = ctx.measureText(pin.name).width;
+		ctx.font = '500 11px Inter, system-ui, sans-serif';
+		const lw = level ? ctx.measureText(level).width : 0;
+		const pw = tw + lw + 30, ph = 22, px = x + 13;
+		// Characters together: their pills stack instead of hiding each other.
+		let py = y - ph / 2;
+		while (this.pills.some(([ax, ay, aw, ah]) => px < ax + aw && px + pw > ax && py < ay + ah && py + ph > ay)) py += ph + 3;
+		this.pills.push([px, py, pw, ph]);
+		const ty = py + ph / 2;
+		if (py !== y - ph / 2) {
+			ctx.beginPath();
+			ctx.moveTo(x + 6, y);
+			ctx.lineTo(px, ty);
+			ctx.strokeStyle = pin.color;
+			ctx.lineWidth = 1.2;
+			ctx.stroke();
+		}
+		ctx.beginPath();
+		ctx.roundRect(px, py, pw, ph, 11);
+		ctx.fillStyle = 'rgba(14, 20, 34, 0.94)';
+		ctx.fill();
+		ctx.lineWidth = 1.5;
+		ctx.strokeStyle = pin.color;
+		ctx.stroke();
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'left';
+		ctx.font = '600 12px Inter, system-ui, sans-serif';
+		ctx.fillStyle = '#f7f8fd';
+		ctx.fillText(pin.name, px + 10, ty + 0.5);
+		if (level) {
+			ctx.font = '500 11px Inter, system-ui, sans-serif';
+			ctx.fillStyle = '#9ba2b9';
+			ctx.fillText(level, px + 10 + tw, ty + 0.5);
+		}
+		ctx.beginPath();
+		ctx.arc(px + pw - 9, ty, 3, 0, Math.PI * 2);
+		ctx.fillStyle = pin.online ? '#6bd999' : pin.color;
+		ctx.fill();
+		ctx.restore();
+		this.shown.push({ kind: 'pin', x, y, r: 12, ref: pin });
+		this.shown.push({ kind: 'pin', x: px + pw / 2, y: ty, r: pw / 2, ref: pin });
+	}
+}
+
+/** A colour per character, stable by its place in the list. */
+export const PALETTE = ['#5cc8f0', '#b58cff', '#f0b45c', '#6fdc8c', '#f07cb4', '#ff8f5a', '#7f9cff', '#e6e66b'];
