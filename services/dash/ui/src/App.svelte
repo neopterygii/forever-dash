@@ -21,14 +21,14 @@
 	<Sidebar />
 	<main>
 		<nav class="tabs">
-			<button class:on={dash.tab === 'map'} onclick={() => (dash.tab = 'map')}>Map</button>
-			<button class:on={dash.tab === 'journal'} onclick={() => (dash.tab = 'journal')}>Journal</button>
 			<span class="who">{who}</span>
+			<button class="jt" class:on={dash.journalOpen} aria-pressed={dash.journalOpen} onclick={() => (dash.journalOpen = !dash.journalOpen)}>
+				<img src="/glyph/guides.png" alt="" />Journal
+			</button>
 		</nav>
 		<div class="body">
-			<!-- Both stay mounted: the map keeps its WebGL context and view while the journal is open. -->
-			<MapPane visible={dash.tab === 'map'} />
-			<Journal visible={dash.tab === 'journal'} />
+			<MapPane visible={true} />
+			<Journal />
 		</div>
 	</main>
 </div>
@@ -41,9 +41,11 @@
 	main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 	.body { position: relative; min-height: 0; }
 	.tabs { display: flex; gap: 4px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
-	.tabs button { background: none; border: 0; padding: 6px 12px; border-radius: 6px; color: var(--textDim); font-weight: 600; }
-	.tabs button.on { background: var(--selected); color: var(--text); }
-	.who { margin-left: auto; color: var(--textDim); }
+	.who { color: var(--textDim); margin-right: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.jt { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border: 0; padding: 6px 12px; border-radius: 8px; color: var(--textDim); font-weight: 600; }
+	.jt img { width: 14px; height: 14px; opacity: 0.8; }
+	.jt.on { background: var(--accent); color: var(--onAccent); }
+	.jt.on img { filter: brightness(0); }
 	.error { position: fixed; bottom: 0; left: 0; margin: 8px; color: var(--danger); background: var(--panel); padding: 6px 10px; border-radius: 6px; }
 	@media (max-width: 720px) {
 		.app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }

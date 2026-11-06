@@ -133,7 +133,8 @@
 			const dwy = s.c === c0 ? 0 : o!.ox - o0!.ox, dwx = s.c === c0 ? 0 : o!.oy - o0!.oy;
 			for (let i = 0; i < s.pts.length; i += 2) pairs.push([s.pts[i] - dwx, s.pts[i + 1] - dwy]);
 		}
-		map.fitWorld(c0, pairs, { padding: 90, maxZoom: 1.2 });
+		// With the journal open, its side of the map is kept clear (the panel is 400 px + margins).
+		map.fitWorld(c0, pairs, { padding: 90, maxZoom: 1.2, right: dash.journalOpen ? 424 : 0 });
 		info = null;
 	});
 
@@ -224,7 +225,7 @@
 	canvas.overlay { pointer-events: none; }
 	.mapsel { position: absolute; top: 12px; left: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-weight: 600; box-shadow: var(--window-shadow); }
 	.info { top: 52px !important; }
-	.legend { position: absolute; top: 12px; right: 12px; display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: var(--well); font-size: 11px; color: var(--textDim); pointer-events: none; }
+	.legend { position: absolute; top: 12px; right: 12px; transition: opacity 0.15s; display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: var(--well); font-size: 11px; color: var(--textDim); pointer-events: none; }
 	.legend span { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { display: inline-block; width: 16px; height: 3px; border-radius: 2px; }
 	.sw.ghost { background: repeating-linear-gradient(90deg, var(--textDim) 0 2px, transparent 2px 6px); }

@@ -143,6 +143,8 @@ export const api = {
 	sessions: (char: string) => get<Span[]>(`/api/sessions?${q({ char })}`),
 	trail: (char: string, from: number, to: number, tol = 1.5) => get<{ segments: Segment[]; points: number; kept: number }>(`/api/trail?${q({ char, from, to, tol })}`),
 	events: (char: string, from: number, to: number, kinds: string[]) => get<DashEvent[]>(`/api/events?${q({ char, from, to, kinds: kinds.join(',') })}`),
+	/** Every character's events in [from, to] (all journal kinds when `kinds` is empty). */
+	allEvents: (from: number, to: number, kinds: string[] = []) => get<DashEvent[]>(`/api/events?${q({ from, to, kinds: kinds.join(',') })}`),
 	journal: (char: string) => get<Session[]>(`/api/journal?${q({ char })}`),
 	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
 	addNote: async (char: string, t: number, text: string) => {

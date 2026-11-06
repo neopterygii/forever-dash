@@ -4,7 +4,6 @@
 
 	function pick(id: string | null) {
 		dash.run(id ? dash.showFocus(id) : dash.showOverview(dash.overview?.hours ?? 6));
-		dash.tab = 'map';
 	}
 
 </script>
