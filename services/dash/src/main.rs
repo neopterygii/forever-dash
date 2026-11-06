@@ -1,6 +1,6 @@
 //! forever-dash: the self-hosted dashboard server.
 //!
-//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--tokens FILE]
+//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--tokens FILE] [--fonts DIR]
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
 //!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
@@ -168,6 +168,7 @@ async fn serve(args: &[String]) {
 	let here = Path::new(env!("CARGO_MANIFEST_DIR"));
 	let db_path = arg(args, "--db", "dash.db");
 	let addr = arg(args, "--addr", "127.0.0.1:8790");
+	let fonts = args.iter().position(|a| a == "--fonts").and_then(|i| args.get(i + 1)).map_or_else(|| here.join("../../addon/Polestar/Media/Fonts"), std::path::PathBuf::from);
 	let web = arg(args, "--web", &here.join("ui/dist").to_string_lossy());
 	let art = arg(args, "--art", "art");
 	let db: Db = Arc::new(Mutex::new(db::open(&db_path).expect("open the database")));
@@ -194,7 +195,7 @@ async fn serve(args: &[String]) {
 		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
 		.nest_service("/art", ServeDir::new(art).precompressed_gzip())
 		// Inter and Fira Sans (SIL OFL 1.1), as the addon ships them.
-		.nest_service("/fonts", ServeDir::new(here.join("../../addon/Polestar/Media/Fonts")))
+		.nest_service("/fonts", ServeDir::new(fonts))
 		.fallback_service(ServeDir::new(web))
 		.layer(axum::extract::DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES * 2))
 		.with_state(db);
