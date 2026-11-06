@@ -89,6 +89,7 @@ const ADDED: &[(&str, &str, &str)] = &[
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
 	let db = Connection::open(path)?;
 	db.execute_batch(SCHEMA)?;
+	db.execute_batch(crate::names::SCHEMA)?;
 	for (table, column, ty) in ADDED {
 		let has: bool = db.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
 		if !has {

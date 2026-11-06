@@ -180,8 +180,17 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 	Ok((segs, total))
 }
 
+/// A quest's title: as the character saw it (`text` records), else Polestar's reference data.
 fn quest_title(db: &Connection, q: &str) -> String {
-	db.query_row("SELECT title FROM quests WHERE id = ?1", [q], |r| r.get::<_, String>(0)).unwrap_or_else(|_| format!("quest {q}"))
+	db.query_row("SELECT title FROM quests WHERE id = ?1", [q], |r| r.get::<_, String>(0))
+		.ok()
+		.or_else(|| crate::names::name(db, "quest", q))
+		.unwrap_or_else(|| format!("quest {q}"))
+}
+
+/// A name from the imported reference data, else "<kind> <id>".
+fn named(db: &Connection, kind: &str, id: &str) -> String {
+	crate::names::name(db, kind, id).unwrap_or_else(|| format!("{kind} {id}"))
 }
 
 /// One line of the journal for an event, or None to leave it out (it still counts).
@@ -196,7 +205,7 @@ fn describe(db: &Connection, kind: &str, f: &[String]) -> Option<String> {
 				format!("{} — {}", g(3), g(4))
 			}
 		}
-		"death" => format!("Died{}", if g(3).is_empty() { String::new() } else { format!(" (killed by npc {}, level {})", g(3), g(4)) }),
+		"death" => format!("Died{}", if g(3).is_empty() { String::new() } else { format!(" (killed by {}, level {})", named(db, "npc", g(3)), g(4)) }),
 		"revive" => format!("Revived ({})", match g(3) { "s" => "spirit healer", "c" => "at the corpse", "r" => "resurrected", _ => "?" }),
 		"mark" => format!("Mark: {}", g(3)),
 		"accept" => format!("Accepted “{}”", quest_title(db, g(0))),
@@ -205,12 +214,12 @@ fn describe(db: &Connection, kind: &str, f: &[String]) -> Option<String> {
 		"fail" => format!("Failed “{}”", quest_title(db, g(0))),
 		"taxi" => format!("Took a flight (node {} → {})", g(0), g(1)),
 		"land" => format!("Landed after {} s", g(1)),
-		"enter" => format!("Entered instance {} ({})", g(0), g(1)),
+		"enter" => format!("Entered {}", named(db, "map", g(0))),
 		"encounter" => format!("Boss encounter {} {}", g(0), if g(1) == "1" { "defeated" } else { "wiped" }),
-		"explore" => format!("Discovered area {} (+{} xp)", g(0), g(1)),
-		"learn" => format!("Learned spell {}", g(0)),
+		"explore" => format!("Discovered {}{}", named(db, "area", g(0)), if g(1).is_empty() || g(1) == "0" { String::new() } else { format!(" (+{} xp)", g(1)) }),
+		"learn" => format!("Learned {}", named(db, "spell", g(0))),
 		"achieve" => format!("Achievement {}", g(0)),
-		"rare" => format!("Spotted rare npc {}", g(0)),
+		"rare" => format!("Spotted {} (rare)", named(db, "npc", g(0))),
 		"bind" => "Set hearthstone".into(),
 		_ => return None,
 	})

@@ -4,12 +4,14 @@
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
 //!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
+//!   forever-dash names --data <data/forever> --tables <data/sources/wago/<build>> [--db dash.db]
 //!
 //! `upload` stands in for the Polestar Client fork's `dash` module: it reads every account's
 //! Recorder SavedVariables and the per-character ones (charId -> name/realm) and uploads them.
 
 mod db;
 mod ingest;
+mod names;
 mod read;
 
 use std::collections::BTreeMap;
@@ -311,11 +313,19 @@ async fn main() {
 		}
 		Some("upload") => tokio::task::spawn_blocking(move || upload_cmd(&args)).await.unwrap(),
 		Some("dump") => dump(&args),
+		Some("names") => {
+			let data = PathBuf::from(arg(&args, "--data", "data/forever"));
+			let tables = PathBuf::from(arg(&args, "--tables", ""));
+			db::open(&arg(&args, "--db", "dash.db"))
+				.map_err(|e| e.to_string())
+				.and_then(|mut db| names::import(&mut db, &data, &tables))
+				.map(|c| println!("imported names: {}", c.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(", ")))
+		}
 		Some("reparse") => {
 			let mut db = db::open(&arg(&args, "--db", "dash.db")).map_err(|e| e.to_string());
 			db.as_mut().map_err(|e| e.clone()).and_then(ingest::reparse).map(|(ok, bad)| println!("reparsed {ok} chunks ({bad} unreadable)"))
 		}
-		_ => Err("usage: forever-dash serve|upload|dump|reparse [options]".into()),
+		_ => Err("usage: forever-dash serve|upload|dump|reparse|names [options]".into()),
 	};
 	if let Err(e) = r {
 		eprintln!("{e}");
