@@ -479,6 +479,9 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
 		snapshot.setupDone = true;
 		emit();
 	},
+	// forever-dash
+	dash_status: () => ({ url: '', tokenSet: false, relay: false, paused: false, lastAt: null, lastError: null, retryAt: null, installs: {} }),
+	set_dash: (a) => ({ url: String(a.url ?? ''), tokenSet: !!a.token, relay: false, paused: false, lastAt: null, lastError: null, retryAt: null, installs: {} }),
 	set_sharing: (a) => {
 		snapshot = a.enabled ? { ...structuredClone(base), pending: 0, shareNotice: false } : { ...snapshot, consent: false, shareNotice: false, status: { ...snapshot.status, kind: 'off', title: 'Sharing is off', detail: '', action: null } };
 		emit();

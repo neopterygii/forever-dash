@@ -7,6 +7,7 @@
 mod addons;
 mod commands;
 mod community;
+mod dash;
 #[cfg(target_os = "linux")]
 mod desktop;
 mod engine;
@@ -170,6 +171,8 @@ pub fn run() {
 			}
 		})
 		.invoke_handler(tauri::generate_handler![
+			dash::dash_status,
+			dash::set_dash,
 			commands::snapshot,
 			commands::rescan,
 			commands::choose_folder,

@@ -1,0 +1,15 @@
+# forever-dash's upload format and WTF reading, shared by the server (services/dash) and the client
+# fork's dash module (apps/client), so the two always agree.
+[package]
+name = "forever-dash-proto"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+rust-version = "1.87"
+publish = false
+
+
+[dependencies]
+polestar-recording = { path = "../../../rust/crates/polestar-recording" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

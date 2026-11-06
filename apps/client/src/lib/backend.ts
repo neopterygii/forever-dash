@@ -2,7 +2,7 @@
 // browser), the calls go to ./mock.ts instead; `import.meta.env.DEV` is false
 // in production builds, so that branch and the mock module are dropped.
 
-import type { ActivityEntry, AddonAction, Changelog, Channel, FolderCheck, PackAction, Preview, SentUpload, Snapshot } from './types';
+import type { ActivityEntry, AddonAction, Changelog, Channel, DashStatus, FolderCheck, PackAction, Preview, SentUpload, Snapshot } from './types';
 
 interface Bridge {
 	invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
@@ -26,6 +26,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 }
 
 export const api = {
+	// forever-dash (src-tauri/src/dash.rs)
+	dashStatus: () => call<DashStatus>('dash_status'),
+	setDash: (url: string, token: string | null) => call<DashStatus>('set_dash', { url, token }),
 	snapshot: () => call<Snapshot>('snapshot'),
 	onSnapshot: async (handler: (s: Snapshot) => void) => (await (bridge ??= load())).listen<Snapshot>('snapshot', handler),
 	rescan: () => call<void>('rescan'),

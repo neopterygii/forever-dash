@@ -10,9 +10,11 @@ rust-version = "1.87"
 publish = false
 
 [workspace]
+members = [".", "proto"]
 
 [dependencies]
 polestar-recording = { path = "../../rust/crates/polestar-recording" }
+forever-dash-proto = { path = "proto" }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "query", "json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
