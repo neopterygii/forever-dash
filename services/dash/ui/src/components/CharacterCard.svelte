@@ -3,7 +3,7 @@
 	import type { Character } from '../lib/api';
 	import { ago, className, classIconUrl, fullName, gold, portraitUrl, raceName, realmName } from '../lib/format';
 
-	let { c, selected, onpick, onopen }: { c: Character; selected: boolean; onpick: () => void; onopen: () => void } = $props();
+	let { c, selected, onpick, onopen }: { c: Character; selected: boolean; onpick: () => void; onopen: (view: 'gear' | 'bags') => void } = $props();
 
 	const portrait = $derived(portraitUrl(c.race, c.sex));
 	const classIcon = $derived(classIconUrl(c.class));
@@ -34,7 +34,8 @@
 		</span>
 	</button>
 	<div class="actions">
-		<button disabled={!c.snapshotAt} title={c.snapshotAt ? 'Gear, bags and bank' : 'No snapshot yet: needs the Polestar_DashSnapshot addon'} onclick={onopen}>Gear &amp; bags</button>
+		<button disabled={!c.snapshotAt} title={c.snapshotAt ? 'Gear: the character sheet' : 'No snapshot yet: needs the Polestar_DashSnapshot addon'} onclick={() => onopen('gear')}>Gear</button>
+		<button disabled={!c.snapshotAt} title={c.snapshotAt ? 'Bags and bank' : 'No snapshot yet: needs the Polestar_DashSnapshot addon'} onclick={() => onopen('bags')}>Bags</button>
 	</div>
 </li>
 
