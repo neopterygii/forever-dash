@@ -6,6 +6,11 @@
 		dash.run(id ? dash.showFocus(id) : dash.showOverview(dash.overview?.hours ?? 6));
 		dash.tab = 'map';
 	}
+
+	function open(id: string) {
+		dash.run(dash.showFocus(id));
+		dash.tab = 'inventory';
+	}
 </script>
 
 <aside class="side">
@@ -15,7 +20,7 @@
 			<button class="all" onclick={() => pick(null)}><span class="n">All characters</span></button>
 		</li>
 		{#each dash.chars as c (c.id)}
-			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} onpick={() => pick(c.id)} />
+			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} onpick={() => pick(c.id)} onopen={() => open(c.id)} />
 		{/each}
 	</ul>
 	{#if dash.stats}

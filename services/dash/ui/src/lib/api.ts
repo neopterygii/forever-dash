@@ -24,6 +24,13 @@ export interface Character {
 	xp: number | null;
 	xpMax: number | null;
 	rested: number | null;
+	/** From Polestar's own per-character data (PolestarDB.alts). */
+	realmName: string | null;
+	money: number | null;
+	bind: string | null;
+	guide: { title: string; id: string; step: number; count: number } | null;
+	/** When the latest Polestar_DashSnapshot save was written, if any. */
+	snapshotAt: number | null;
 	chunks: number;
 	first: number | null;
 	last: number | null;
@@ -78,6 +85,41 @@ export interface Session {
 	notes: { id: number; t: number; text: string }[];
 }
 
+export interface Item {
+	id: number;
+	name?: string;
+	/** 0 poor ... 5 legendary. */
+	quality?: number | null;
+	ilvl?: number | null;
+	reqLevel?: number | null;
+	invType?: number | null;
+	icon?: number | null;
+	count?: number;
+	slot?: number;
+	slotName?: string;
+	itemString?: string;
+}
+
+export interface Container {
+	bag: number;
+	size: number;
+	item: Item | null;
+	slots: Item[];
+}
+
+export interface Snapshot {
+	saved: number;
+	name: string | null;
+	realm: string | null;
+	money: number | null;
+	equipAt: number | null;
+	bagsAt: number | null;
+	bankAt: number | null;
+	equip: Item[];
+	bags: Container[] | null;
+	bank: Container[] | null;
+}
+
 export interface Stats {
 	chunks: number;
 	positions: number;
@@ -102,6 +144,7 @@ export const api = {
 	trail: (char: string, from: number, to: number, tol = 1.5) => get<{ segments: Segment[]; points: number; kept: number }>(`/api/trail?${q({ char, from, to, tol })}`),
 	events: (char: string, from: number, to: number, kinds: string[]) => get<DashEvent[]>(`/api/events?${q({ char, from, to, kinds: kinds.join(',') })}`),
 	journal: (char: string) => get<Session[]>(`/api/journal?${q({ char })}`),
+	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
 	addNote: async (char: string, t: number, text: string) => {
 		const r = await fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, t, text }) });
 		if (!r.ok) throw new Error(`notes: ${r.status}`);

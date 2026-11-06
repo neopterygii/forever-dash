@@ -29,6 +29,17 @@ pub struct DashUpload {
 	/// charId -> name and realm, from `WTF/Account/<acct>/<realm>/<name>/SavedVariables`.
 	#[serde(default)]
 	pub characters: BTreeMap<String, Who>,
+	/// charId -> Polestar_DashSnapshot's PolestarDashSnapshotDB (gear, bags, bank), as JSON.
+	#[serde(default)]
+	pub snapshots: BTreeMap<String, serde_json::Value>,
+	/// charId -> Polestar's own entry for the character (PolestarDB.alts.chars[...]), as JSON.
+	#[serde(default)]
+	pub alts: BTreeMap<String, serde_json::Value>,
+}
+
+/// The time a snapshot was last written: its newest `*At`.
+fn snapshot_saved(v: &serde_json::Value) -> Option<f64> {
+	["equipAt", "bagsAt", "bankAt", "moneyAt"].iter().filter_map(|k| v.get(*k).and_then(serde_json::Value::as_f64)).reduce(f64::max)
 }
 
 /// Record kinds the journal shows (the rest stay in the raw chunk).
@@ -149,6 +160,33 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 			)
 			.map_err(|e| e.to_string())?;
 		}
+	}
+	for (char_id, snap) in &req.snapshots {
+		let Some(saved) = snapshot_saved(snap).filter(|_| valid_char_id(char_id)) else { continue };
+		tx.execute("INSERT OR IGNORE INTO characters (char_id) VALUES (?1)", [char_id]).map_err(|e| e.to_string())?;
+		tx.execute("INSERT OR IGNORE INTO snapshots (char_id, saved, json) VALUES (?1, ?2, ?3)", params![char_id, saved, snap.to_string()]).map_err(|e| e.to_string())?;
+	}
+	for (char_id, alt) in &req.alts {
+		let seen = alt.get("seen").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+		if !valid_char_id(char_id) {
+			continue;
+		}
+		// The active guide tab: { title, id, step, count }.
+		let guide = alt.get("active").and_then(|a| a.as_u64()).and_then(|i| alt.get("tabs").and_then(|t| t.get(i.to_string()))).cloned();
+		tx.execute(
+			"UPDATE characters SET realm_name = ?2, money = ?3, bind = ?4, profs = ?5, guide = ?6, alt_seen = ?7
+			 WHERE char_id = ?1 AND (alt_seen IS NULL OR alt_seen <= ?7)",
+			params![
+				char_id,
+				alt.get("realm").and_then(|v| v.as_str()),
+				alt.get("money").and_then(serde_json::Value::as_i64),
+				alt.get("bind").and_then(|v| v.as_str()),
+				alt.get("profs").map(|v| v.to_string()),
+				guide.map(|v| v.to_string()),
+				seen
+			],
+		)
+		.map_err(|e| e.to_string())?;
 	}
 	for c in &req.chunks {
 		if c.text.len() > MAX_CHUNK_BYTES {

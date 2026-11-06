@@ -68,6 +68,14 @@ CREATE INDEX IF NOT EXISTS events_char_t ON events (char_id, t);
 
 CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY, title TEXT NOT NULL);
 
+-- Polestar_DashSnapshot's PolestarDashSnapshotDB per character, every distinct save kept (JSON).
+CREATE TABLE IF NOT EXISTS snapshots (
+	char_id TEXT NOT NULL,
+	saved REAL NOT NULL,
+	json TEXT NOT NULL,
+	PRIMARY KEY (char_id, saved)
+);
+
 CREATE TABLE IF NOT EXISTS notes (
 	id INTEGER PRIMARY KEY,
 	char_id TEXT NOT NULL,
@@ -84,6 +92,13 @@ const ADDED: &[(&str, &str, &str)] = &[
 	("characters", "xp_max", "INTEGER"),
 	("characters", "rested", "INTEGER"),
 	("characters", "xp_t", "REAL"),
+	// From Polestar's own per-character snapshot (PolestarDB.alts, the Characters page).
+	("characters", "realm_name", "TEXT"),
+	("characters", "money", "INTEGER"),
+	("characters", "bind", "TEXT"),
+	("characters", "profs", "TEXT"),
+	("characters", "guide", "TEXT"),
+	("characters", "alt_seen", "REAL"),
 ];
 
 pub fn open(path: &str) -> rusqlite::Result<Connection> {

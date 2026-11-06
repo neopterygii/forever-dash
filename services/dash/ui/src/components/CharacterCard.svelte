@@ -1,9 +1,9 @@
 <script lang="ts">
 	// One character in the sidebar: portrait, name, level, XP, where they are; picks the focus.
 	import type { Character } from '../lib/api';
-	import { ago, className, classIconUrl, fullName, portraitUrl, raceName, realmName } from '../lib/format';
+	import { ago, className, classIconUrl, fullName, gold, portraitUrl, raceName, realmName } from '../lib/format';
 
-	let { c, selected, onpick }: { c: Character; selected: boolean; onpick: () => void } = $props();
+	let { c, selected, onpick, onopen }: { c: Character; selected: boolean; onpick: () => void; onopen: () => void } = $props();
 
 	const portrait = $derived(portraitUrl(c.race, c.sex));
 	const classIcon = $derived(classIconUrl(c.class));
@@ -24,7 +24,7 @@
 		</span>
 		<span class="text">
 			<span class="n">{fullName(c)}</span>
-			<span class="sub">{raceName(c.race)} {className(c.class)}{realm ? ` · ${realm}` : ''}</span>
+			<span class="sub">{raceName(c.race)} {className(c.class)}{realm ? ` · ${realm}` : ''}{c.money != null ? ` · ${gold(c.money)}` : ''}</span>
 			{#if xpPct != null}
 				<span class="xp" title="{c.xp} / {c.xpMax} XP{c.rested ? ` · ${c.rested} rested` : ''}">
 					<span class="fill" style:width="{xpPct}%"></span><span class="rest" style:left="{xpPct}%" style:width="{restedPct}%"></span>
@@ -34,8 +34,7 @@
 		</span>
 	</button>
 	<div class="actions">
-		<button disabled title="Gear: needs the snapshot addon (next step)">Gear</button>
-		<button disabled title="Bags and bank: needs the snapshot addon (next step)">Bags</button>
+		<button disabled={!c.snapshotAt} title={c.snapshotAt ? 'Gear, bags and bank' : 'No snapshot yet: needs the Polestar_DashSnapshot addon'} onclick={onopen}>Gear &amp; bags</button>
 	</div>
 </li>
 

@@ -18,3 +18,15 @@ export const classIconUrl = (cls: string | null) => (cls ? `/art/icons/class/${c
 /** Forever's realm folders are numbers; show a realm only when it has a name. */
 export const realmName = (r: string | null) => (r && !/^\d+$/.test(r) ? r : '');
 export const fullName = (c: { name: string | null; surname: string | null; id: string }) => [c.name || c.id, c.surname].filter(Boolean).join(' ');
+
+/** Copper as the game shows it: 12g 3s 40c. */
+export function gold(copper: number | null | undefined): string {
+	if (copper == null) return '';
+	const g = Math.floor(copper / 10000), s = Math.floor((copper % 10000) / 100), c = copper % 100;
+	return [g && `${g}g`, (g || s) && `${s}s`, `${c}c`].filter(Boolean).join(' ');
+}
+
+/** The game's item quality colours (poor ... heirloom). */
+export const QUALITY = ['#9d9d9d', '#ffffff', '#1eff00', '#2f8cff', '#a335ee', '#ff8000', '#e6cc80', '#00ccff'];
+export const qualityColor = (q: number | null | undefined) => QUALITY[q ?? 1] ?? QUALITY[1];
+export const itemIconUrl = (id: number) => `/art/icons/item/${id}.png`;

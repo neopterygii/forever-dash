@@ -5,6 +5,7 @@
 	import Sidebar from './components/Sidebar.svelte';
 	import MapPane from './components/MapPane.svelte';
 	import Journal from './components/Journal.svelte';
+	import Inventory from './components/Inventory.svelte';
 
 	onMount(() => dash.run(dash.load()));
 
@@ -22,12 +23,14 @@
 		<nav class="tabs">
 			<button class:on={dash.tab === 'map'} onclick={() => (dash.tab = 'map')}>Map</button>
 			<button class:on={dash.tab === 'journal'} onclick={() => (dash.tab = 'journal')}>Journal</button>
+			<button class:on={dash.tab === 'inventory'} onclick={() => (dash.tab = 'inventory')}>Gear &amp; bags</button>
 			<span class="who">{who}</span>
 		</nav>
 		<div class="body">
 			<!-- Both stay mounted: the map keeps its WebGL context and view while the journal is open. -->
 			<MapPane visible={dash.tab === 'map'} />
 			<Journal visible={dash.tab === 'journal'} />
+			<Inventory visible={dash.tab === 'inventory'} />
 		</div>
 	</main>
 </div>

@@ -56,7 +56,9 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 		        (SELECT COUNT(*) FROM chunks k WHERE k.char_id = c.char_id),
 		        (SELECT MIN(first_t) FROM chunks k WHERE k.char_id = c.char_id),
 		        (SELECT MAX(last_t) FROM chunks k WHERE k.char_id = c.char_id),
-		        c.surname, c.sex, c.xp, c.xp_max, c.rested
+		        c.surname, c.sex, c.xp, c.xp_max, c.rested,
+		        c.realm_name, c.money, c.bind, c.guide,
+		        (SELECT MAX(saved) FROM snapshots s WHERE s.char_id = c.char_id)
 		 FROM characters c ORDER BY 10 DESC",
 	)?;
 	let mut out = Vec::new();
@@ -67,6 +69,9 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 			"level": r.get::<_, Option<i64>>(6)?, "chunks": r.get::<_, i64>(7)?, "first": r.get::<_, Option<f64>>(8)?, "last": r.get::<_, Option<f64>>(9)?,
 			"surname": r.get::<_, Option<String>>(10)?, "sex": r.get::<_, Option<i64>>(11)?,
 			"xp": r.get::<_, Option<i64>>(12)?, "xpMax": r.get::<_, Option<i64>>(13)?, "rested": r.get::<_, Option<i64>>(14)?,
+			"realmName": r.get::<_, Option<String>>(15)?, "money": r.get::<_, Option<i64>>(16)?, "bind": r.get::<_, Option<String>>(17)?,
+			"guide": r.get::<_, Option<String>>(18)?.and_then(|g| serde_json::from_str::<Value>(&g).ok()),
+			"snapshotAt": r.get::<_, Option<f64>>(19)?,
 		}))
 	})?;
 	for row in rows {
@@ -369,4 +374,107 @@ fn distance(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: 
 		n += 1;
 	}
 	Ok((d, n))
+}
+
+/// Inventory slot names, 0 (ammo) to 19.
+const SLOTS: [&str; 20] = [
+	"Ammo", "Head", "Neck", "Shoulder", "Shirt", "Chest", "Waist", "Legs", "Feet", "Wrist", "Hands", "Finger", "Finger", "Trinket",
+	"Trinket", "Back", "Main hand", "Off hand", "Ranged", "Tabard",
+];
+
+/// An item's display facts from the imported names (`forever-dash names`).
+fn item(db: &Connection, id: i64) -> Value {
+	db.query_row("SELECT name, quality, ilvl, req_level, inv_type, icon FROM items WHERE id = ?1", [id], |r| {
+		Ok(json!({ "id": id, "name": r.get::<_, String>(0)?, "quality": r.get::<_, Option<i64>>(1)?, "ilvl": r.get::<_, Option<i64>>(2)?,
+			"reqLevel": r.get::<_, Option<i64>>(3)?, "invType": r.get::<_, Option<i64>>(4)?, "icon": r.get::<_, Option<i64>>(5)? }))
+	})
+	.unwrap_or_else(|_| json!({ "id": id }))
+}
+
+/// "itemID:count" -> (id, count).
+fn id_count(s: &str) -> Option<(i64, i64)> {
+	let (a, b) = s.split_once(':').unwrap_or((s, "1"));
+	Some((a.parse().ok()?, b.parse().unwrap_or(1)))
+}
+
+fn containers(db: &Connection, v: Option<&Value>) -> Value {
+	let Some(Value::Object(bags)) = v else { return Value::Null };
+	let mut out: Vec<(i64, Value)> = bags
+		.iter()
+		.filter_map(|(k, b)| {
+			let bag: i64 = k.parse().ok()?;
+			let mut slots: Vec<(i64, Value)> = b
+				.get("slots")
+				.and_then(Value::as_object)
+				.map(|o| {
+					o.iter()
+						.filter_map(|(s, it)| {
+							let (id, count) = id_count(it.as_str()?)?;
+							let mut i = item(db, id);
+							i["count"] = json!(count);
+							i["slot"] = json!(s.parse::<i64>().ok()?);
+							Some((s.parse().ok()?, i))
+						})
+						.collect()
+				})
+				.unwrap_or_default();
+			slots.sort_by_key(|(s, _)| *s);
+			let bag_item = b.get("item").and_then(Value::as_i64).map(|id| item(db, id));
+			Some((bag, json!({ "bag": bag, "size": b.get("size"), "item": bag_item, "slots": slots.into_iter().map(|(_, i)| i).collect::<Vec<_>>() })))
+		})
+		.collect();
+	out.sort_by_key(|(b, _)| *b);
+	Value::Array(out.into_iter().map(|(_, b)| b).collect())
+}
+
+/// The character's latest snapshot (Polestar_DashSnapshot): gear by slot, bags and bank, with item facts.
+pub fn snapshot(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
+	let row: Option<(f64, String)> = db
+		.query_row("SELECT saved, json FROM snapshots WHERE char_id = ?1 ORDER BY saved DESC LIMIT 1", [char_id], |r| Ok((r.get(0)?, r.get(1)?)))
+		.ok();
+	let Some((saved, text)) = row else { return Ok(Value::Null) };
+	let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+	let mut equip = Vec::new();
+	if let Some(Value::Object(e)) = v.get("equip") {
+		for (k, s) in e {
+			let (Ok(slot), Some(s)) = (k.parse::<usize>(), s.as_str()) else { continue };
+			let Some(id) = s.split(':').nth(1).and_then(|x| x.parse::<i64>().ok()) else { continue };
+			let mut i = item(db, id);
+			i["slot"] = json!(slot);
+			i["slotName"] = json!(SLOTS.get(slot).copied().unwrap_or("?"));
+			i["itemString"] = json!(s);
+			equip.push((slot, i));
+		}
+	}
+	equip.sort_by_key(|(s, _)| *s);
+	Ok(json!({
+		"saved": saved, "name": v.get("name"), "realm": v.get("realm"), "money": v.get("money"),
+		"equipAt": v.get("equipAt"), "bagsAt": v.get("bagsAt"), "bankAt": v.get("bankAt"),
+		"equip": equip.into_iter().map(|(_, i)| i).collect::<Vec<_>>(),
+		"bags": containers(db, v.get("bags")),
+		"bank": containers(db, v.get("bank")),
+	}))
+}
+
+/// Every item id the snapshots hold (equipped, carried, banked, the bags themselves): for the icon export.
+pub fn item_ids(db: &Connection) -> rusqlite::Result<Vec<i64>> {
+	let mut ids = std::collections::BTreeSet::new();
+	let mut st = db.prepare("SELECT json FROM snapshots")?;
+	for text in st.query_map([], |r| r.get::<_, String>(0))? {
+		let v: Value = serde_json::from_str(&text?).unwrap_or(Value::Null);
+		if let Some(Value::Object(e)) = v.get("equip") {
+			ids.extend(e.values().filter_map(|s| s.as_str()?.split(':').nth(1)?.parse::<i64>().ok()));
+		}
+		for part in ["bags", "bank"] {
+			if let Some(Value::Object(bags)) = v.get(part) {
+				for b in bags.values() {
+					ids.extend(b.get("item").and_then(Value::as_i64));
+					if let Some(Value::Object(slots)) = b.get("slots") {
+						ids.extend(slots.values().filter_map(|s| id_count(s.as_str()?).map(|(id, _)| id)));
+					}
+				}
+			}
+		}
+	}
+	Ok(ids.into_iter().collect())
 }

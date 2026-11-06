@@ -58,7 +58,7 @@ class Dash {
 	/** Playback time (epoch seconds). */
 	t = $state(0);
 	playing = $state(false);
-	tab = $state<'map' | 'journal'>('map');
+	tab = $state<'map' | 'journal' | 'inventory'>('map');
 	/** Bumped to ask the map to fit its view to what is loaded. */
 	fitRequest = $state(0);
 	error = $state<string | null>(null);
