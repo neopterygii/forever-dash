@@ -20,6 +20,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 polestar-recording = { path = "../../../rust/crates/polestar-recording" }
+# forever-dash: the dashboard upload (src/dash.rs).
+forever-dash-proto = { path = "../../../services/dash/proto" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-autostart = "2"
@@ -45,6 +47,10 @@ sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 # The webview's settings on Linux (lib.rs: GPU compositing always); the version wry uses.
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0", features = ["v2_16"] }
+
+[dev-dependencies]
+# forever-dash: dash.rs's test against a running server.
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [profile.release]
 lto = true

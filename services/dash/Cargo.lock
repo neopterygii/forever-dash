@@ -226,6 +226,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "csv",
+ "forever-dash-proto",
  "polestar-recording",
  "reqwest",
  "rusqlite",
@@ -233,6 +234,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower-http",
+]
+
+[[package]]
+name = "forever-dash-proto"
+version = "0.1.0"
+dependencies = [
+ "polestar-recording",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,41 +1,12 @@
 //! `POST /v1/upload`: upstream ingest's shape (accepted / duplicate / rejected per seq), plus
 //! what only our uploader knows: the uiMap frames and charId -> name/realm.
 
-use std::collections::BTreeMap;
-
-use polestar_recording::api::{Rejected, UploadChunk, UploadResponse, MAX_CHUNK_BYTES, MAX_UPLOAD_CHUNKS};
+use polestar_recording::api::{Rejected, UploadResponse, MAX_CHUNK_BYTES, MAX_UPLOAD_CHUNKS};
 use polestar_recording::record::{decode_chunk, Chunk, Kind};
 use polestar_recording::sv::{valid_char_id, valid_install};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Who {
-	pub name: String,
-	/// Forever characters have surnames (the per-character folder is `<Name>-<Surname>`).
-	#[serde(default)]
-	pub surname: String,
-	pub realm: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DashUpload {
-	pub uploader: String,
-	pub install: String,
-	pub chunks: Vec<UploadChunk>,
-	/// `PolestarRecorderDB.maps`: uiMapID -> the `map` record's fields from `id` on.
-	#[serde(default)]
-	pub maps: BTreeMap<u32, String>,
-	/// charId -> name and realm, from `WTF/Account/<acct>/<realm>/<name>/SavedVariables`.
-	#[serde(default)]
-	pub characters: BTreeMap<String, Who>,
-	/// charId -> Polestar_DashSnapshot's PolestarDashSnapshotDB (gear, bags, bank), as JSON.
-	#[serde(default)]
-	pub snapshots: BTreeMap<String, serde_json::Value>,
-	/// charId -> Polestar's own entry for the character (PolestarDB.alts.chars[...]), as JSON.
-	#[serde(default)]
-	pub alts: BTreeMap<String, serde_json::Value>,
-}
+pub use forever_dash_proto::{DashUpload, Who};
 
 /// The time a snapshot was last written: its newest `*At`.
 fn snapshot_saved(v: &serde_json::Value) -> Option<f64> {

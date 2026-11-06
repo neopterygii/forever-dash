@@ -287,3 +287,15 @@ export interface FolderCheck {
 	path: string;
 	problem: string | null;
 }
+
+/** forever-dash: the dashboard upload's state (src-tauri/src/dash.rs `Status`). */
+export interface DashStatus {
+	url: string;
+	tokenSet: boolean;
+	relay: boolean;
+	paused: boolean;
+	lastAt: number | null;
+	lastError: string | null;
+	retryAt: number | null;
+	installs: Record<string, { uploaded: number; acked: number; extras: number }>;
+}

@@ -11,6 +11,7 @@
 	import type { Channel, Snapshot } from '../lib/types';
 	import PageHeader from '../components/PageHeader.svelte';
 	import Glyph from '../components/Glyph.svelte';
+	import DashboardSettings from '../components/DashboardSettings.svelte';
 
 	let { snapshot }: { snapshot: Snapshot } = $props();
 
@@ -97,6 +98,7 @@
 
 <div class="body">
 	<div class="column">
+		<DashboardSettings {snapshot} />
 		<section class="section">
 			<h2>Recording</h2>
 			<div class="rows">

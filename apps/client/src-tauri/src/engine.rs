@@ -51,14 +51,14 @@ pub fn now_ms() -> i64 {
 }
 
 /// One WoW account folder and what was last read from its file.
-struct Account {
-	folder_name: String,
-	sv_path: PathBuf,
+pub(crate) struct Account {
+	pub(crate) folder_name: String,
+	pub(crate) sv_path: PathBuf,
 	char_names: Vec<String>,
 	seen: Option<(SystemTime, u64)>,
-	hash: Option<[u8; 32]>,
+	pub(crate) hash: Option<[u8; 32]>,
 	changed_at: Option<Instant>,
-	sv: Option<Arc<sv::SavedVars>>,
+	pub(crate) sv: Option<Arc<sv::SavedVars>>,
 	error: Option<sv::Error>,
 }
 
@@ -103,14 +103,14 @@ enum Failed {
 
 pub struct State {
 	pub settings: Settings,
-	progress: Progress,
+	pub(crate) progress: Progress,
 	candidates: Vec<install::Install>,
 	pub(crate) install: Option<install::Install>,
 	/// The chosen folder and why it is not usable.
 	problem: Option<(PathBuf, install::FolderProblem)>,
 	/// The first scan for the game has finished.
 	scanned: bool,
-	accounts: Vec<Account>,
+	pub(crate) accounts: Vec<Account>,
 	pub(crate) game_running: bool,
 	uploading: Option<usize>,
 	/// Getting a token from the server (solving its proof of work).
@@ -273,6 +273,8 @@ impl Engine {
 			self.default_share();
 			self.refresh_week();
 			self.upload_pending().await;
+			// forever-dash: the player's own dashboard (dash.rs).
+			self.dash_sync().await;
 			self.publish();
 			let wait = if soon { DEBOUNCE } else { POLL };
 			let _ = tokio::time::timeout(wait, self.kick.notified()).await;
@@ -601,7 +603,9 @@ impl Engine {
 			progress.acked = progress.acked.max(c);
 		}
 		progress.last_at = now;
-		let acked = progress.acked;
+		// forever-dash: Ack.lua waits for the dashboard too when it is set (dash.rs).
+		let upstream_acked = progress.acked;
+		let acked = crate::dash::combined_ack(&self.store.dir, &state.settings, &request.install, upstream_acked);
 		let _ = self.store.save_progress(&state.progress);
 		state.failure = None;
 		state.last_upload = Some(now);
@@ -680,6 +684,10 @@ impl Engine {
 	/// ([`share_by_default`]); the window's notice then says what is shared, with Stop sharing.
 	/// Called right after `poll_files`, so every account's file has been looked at.
 	fn default_share(&self) {
+		// forever-dash: relaying to Polestar's server is opt-in in this fork (dash.rs).
+		if crate::dash::NO_DEFAULT_SHARE {
+			return;
+		}
 		let state = self.lock();
 		let on = share_by_default(&state.settings, state.install.is_some(), &state.accounts);
 		drop(state);
@@ -929,8 +937,10 @@ fn backoff_secs(attempts: u32, retry_after: Option<u64>) -> u64 {
 /// What Ack.lua tells the Recorder: nothing (`None`) until sharing has been on once, so a
 /// `/psrec on` of someone whose client never shared stays theirs; then whether they share and
 /// have not paused uploads. (`consent` covers settings saved before `ever_shared` existed.)
-fn sharing(settings: &Settings) -> Option<bool> {
-	(settings.ever_shared || settings.consent).then_some(settings.consent && !settings.paused)
+pub(crate) fn sharing(settings: &Settings) -> Option<bool> {
+	// forever-dash: the Recorder records while the dashboard is set, relaying to Polestar or not.
+	let dash = crate::dash::enabled(settings);
+	(settings.ever_shared || settings.consent || dash).then_some((settings.consent || dash) && !settings.paused)
 }
 
 /// Whether sharing turns on by default now: the player never chose (sharing was never on, so
@@ -1220,7 +1230,7 @@ fn prepare_chunk(text: &str, names: &[String]) -> Result<String, String> {
 
 /// The highest seq the server confirmed holding (accepted or duplicate) among the
 /// seqs this request sent; anything else in its answer is ignored.
-fn confirmed_ack(sent: &[api::UploadChunk], accepted: &[u64], duplicate: &[u64]) -> Option<u64> {
+pub(crate) fn confirmed_ack(sent: &[api::UploadChunk], accepted: &[u64], duplicate: &[u64]) -> Option<u64> {
 	let highest = sent.iter().map(|c| c.seq).max()?;
 	accepted.iter().chain(duplicate).copied().filter(|s| *s <= highest && sent.iter().any(|c| c.seq == *s)).max()
 }

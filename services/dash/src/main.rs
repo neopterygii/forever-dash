@@ -1,6 +1,6 @@
 //! forever-dash: the self-hosted dashboard server.
 //!
-//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR]
+//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--tokens FILE]
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
 //!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
@@ -24,7 +24,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ingest::{DashUpload, Who};
-use polestar_recording::{api, lua, record, sv};
+use polestar_recording::{api, record, sv};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::services::ServeDir;
@@ -39,7 +39,19 @@ fn err500(e: impl std::fmt::Display) -> Response {
 	(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
 }
 
-async fn upload(State(db): State<Db>, Json(req): Json<DashUpload>) -> Response {
+/// Device tokens (`--tokens <file>`, one per line); none = uploads are open (LAN/Tailscale only).
+static TOKENS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn authorized(headers: &axum::http::HeaderMap) -> bool {
+	let Some(tokens) = TOKENS.get().filter(|t| !t.is_empty()) else { return true };
+	let given = headers.get(axum::http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+	tokens.iter().any(|t| t == given)
+}
+
+async fn upload(State(db): State<Db>, headers: axum::http::HeaderMap, Json(req): Json<DashUpload>) -> Response {
+	if !authorized(&headers) {
+		return (StatusCode::UNAUTHORIZED, "unknown token").into_response();
+	}
 	let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
 	let mut db = db.lock().unwrap();
 	match ingest::upload(&mut db, &req, now) {
@@ -159,6 +171,14 @@ async fn serve(args: &[String]) {
 	let web = arg(args, "--web", &here.join("ui/dist").to_string_lossy());
 	let art = arg(args, "--art", "art");
 	let db: Db = Arc::new(Mutex::new(db::open(&db_path).expect("open the database")));
+	let tokens: Vec<String> = match args.iter().position(|a| a == "--tokens").and_then(|i| args.get(i + 1)) {
+		Some(f) => std::fs::read_to_string(f).expect("read --tokens").lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_string).collect(),
+		None => Vec::new(),
+	};
+	if !tokens.is_empty() {
+		println!("uploads need one of {} device tokens", tokens.len());
+	}
+	let _ = TOKENS.set(tokens);
 	let app = Router::new()
 		.route("/v1/upload", post(upload))
 		.route("/api/characters", get(characters))
@@ -193,35 +213,6 @@ struct Found {
 	alts: BTreeMap<String, Value>,
 }
 
-/// A Lua value as JSON: tables become objects keyed by their keys as text (arrays too, so `[0]`, `[-2]`
-/// and `[1]` keep their meaning), numbers that are whole stay integers.
-fn lua_json(v: &lua::Value) -> Value {
-	match v {
-		lua::Value::Nil => Value::Null,
-		lua::Value::Bool(b) => json!(b),
-		lua::Value::Num(n) if n.fract() == 0.0 && n.abs() < 9.0e15 => json!(*n as i64),
-		lua::Value::Num(n) => json!(n),
-		lua::Value::Str(s) => json!(s),
-		lua::Value::Table(t) => {
-			let key = |k: &lua::Value| match k {
-				lua::Value::Str(s) => s.clone(),
-				lua::Value::Num(n) if n.fract() == 0.0 => format!("{}", *n as i64),
-				lua::Value::Num(n) => n.to_string(),
-				lua::Value::Bool(b) => b.to_string(),
-				_ => String::new(),
-			};
-			Value::Object(t.iter().filter(|(_, v)| *v != lua::Value::Nil).map(|(k, v)| (key(k), lua_json(v))).collect())
-		}
-	}
-}
-
-/// The value of global `name` in a SavedVariables file, as JSON.
-fn sv_global(path: &Path, name: &str) -> Option<Value> {
-	let text = std::fs::read_to_string(path).ok()?;
-	let vars = lua::parse_assignments(&text).ok()?;
-	vars.iter().rev().find(|(n, _)| n == name).map(|(_, v)| lua_json(v)).filter(|v| v.is_object())
-}
-
 /// Every account of a WTF folder with Recorder data, and charId -> name/realm from the
 /// per-character SavedVariables (`<acct>/<realm>/<name>/SavedVariables/Polestar_Recorder.lua`).
 fn scan(wtf: &Path) -> Vec<Found> {
@@ -241,39 +232,8 @@ fn scan(wtf: &Path) -> Vec<Found> {
 				continue;
 			}
 		};
-		let mut characters = BTreeMap::new();
-		let mut snapshots = BTreeMap::new();
-		let polestar_alts = sv_global(&acct.join("SavedVariables").join("Polestar.lua"), "PolestarDB").and_then(|db| db.get("alts")?.get("chars").cloned());
-		for realm in dirs(&acct).into_iter().filter(|p| !p.ends_with("SavedVariables")) {
-			for ch in dirs(&realm) {
-				let Ok(text) = std::fs::read_to_string(ch.join("SavedVariables").join(sv::FILE_NAME)) else { continue };
-				let Ok(vars) = lua::parse_assignments(&text) else { continue };
-				let id = vars.iter().rev().find(|(n, _)| n == "PolestarRecorderCharDB").and_then(|(_, v)| v.get("id")).and_then(|v| v.as_str()).map(str::to_string);
-				if let Some(id) = id.filter(|i| sv::valid_char_id(i)) {
-					let name = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
-					// Forever: `<acct>/<realm>/<Name>-<Surname>/` (the realm folder is a number there);
-					// characters without a surname: `<acct>/<realm>/<Name>/`.
-					let folder = name(&ch);
-					let (first, surname) = folder.split_once('-').filter(|(n, s)| !n.is_empty() && !s.is_empty()).map_or((folder.as_str(), ""), |(n, s)| (n, s));
-					let who = Who { name: first.to_string(), surname: surname.to_string(), realm: name(&realm) };
-					if let Some(snap) = sv_global(&ch.join("SavedVariables").join("Polestar_DashSnapshot.lua"), "PolestarDashSnapshotDB") {
-						snapshots.insert(id.clone(), snap);
-					}
-					characters.insert(id, who);
-				}
-			}
-		}
-		// Polestar's entries are keyed "Name-Realm" by the game's name (no surname): match on the name,
-		// only when one entry has it.
-		let mut alts = BTreeMap::new();
-		if let Some(Value::Object(entries)) = &polestar_alts {
-			for (id, who) in &characters {
-				let mut hits = entries.values().filter(|e| e.get("name").and_then(Value::as_str) == Some(who.name.as_str()));
-				if let (Some(e), None) = (hits.next(), hits.next()) {
-					alts.insert(id.clone(), e.clone());
-				}
-			}
-		}
+		let x = forever_dash_proto::read_account(&acct);
+		let (characters, snapshots, alts) = (x.characters, x.snapshots, x.alts);
 		out.push(Found { account: acct.file_name().unwrap().to_string_lossy().into_owned(), vars, characters, snapshots, alts });
 	}
 	out
@@ -282,6 +242,7 @@ fn scan(wtf: &Path) -> Vec<Found> {
 fn upload_cmd(args: &[String]) -> Result<(), String> {
 	let wtf = PathBuf::from(arg(args, "--wtf", "WTF"));
 	let server = arg(args, "--server", "http://127.0.0.1:8790");
+	let token = arg(args, "--token", "");
 	let http = reqwest::blocking::Client::new();
 	for f in scan(&wtf) {
 		let chunks: Vec<api::UploadChunk> = f.vars.chunks.iter().map(|(&seq, text)| api::UploadChunk { seq, text: text.clone() }).collect();
@@ -308,7 +269,11 @@ fn upload_cmd(args: &[String]) -> Result<(), String> {
 				snapshots: if i == 0 { f.snapshots.clone() } else { BTreeMap::new() },
 				alts: if i == 0 { f.alts.clone() } else { BTreeMap::new() },
 			};
-			let resp = http.post(format!("{server}/v1/upload")).json(&body).send().map_err(|e| e.to_string())?;
+			let mut req = http.post(format!("{server}/v1/upload")).json(&body);
+			if !token.is_empty() {
+				req = req.bearer_auth(&token);
+			}
+			let resp = req.send().map_err(|e| e.to_string())?;
 			if !resp.status().is_success() {
 				return Err(format!("{}: {}", resp.status(), resp.text().unwrap_or_default()));
 			}
