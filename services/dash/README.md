@@ -50,6 +50,12 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   rewrites closed sessions in prose, newest first, and keeps the answer; a failure keeps the
   template entry until the next round. `POST /api/diary` stores your own entry (empty = back to the
   written one). Only recorded facts go into an entry or a prompt.
+- **Milestones** (`src/milestones.rs`): a character's firsts and round numbers, found in its whole
+  history when read: first herb, ore, skin and fish, each new kind of herb or ore, professions learned,
+  their ranks (Journeyman...) and skill steps, first visit to each zone and dungeon, first flight, death,
+  elite, rare and boss, boss encounter won, every 10th level, round numbers of errands and kills. They
+  show in their session's log (a star) and in its diary entry. Needs `loot` and `skill` events (stored
+  since this change: `reparse` an older database).
 - **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with
   sample data and run `node tools/phone-check.cjs http://127.0.0.1:8799 <out dir>`. It opens every view
   (overview, a character, both journals with a quest card, diary editing, gear, bags and stats) at 390x844

@@ -362,6 +362,7 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 	older.sort_by(|x, y| y.0.total_cmp(&x.0).then_with(|| x.2.cmp(&y.2)));
 	let more = older.len() > limit;
 	let mut sexes: HashMap<String, Option<i64>> = HashMap::new();
+	let mut milestones: HashMap<String, Vec<crate::milestones::Milestone>> = HashMap::new();
 	let mut out = Vec::new();
 	for (start, end, id) in older.into_iter().take(limit) {
 		let char_id = id.as_str();
@@ -425,6 +426,14 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 				events.push(e);
 			}
 		}
+		// The session's milestones, as log lines of their own.
+		if !milestones.contains_key(char_id) {
+			milestones.insert(id.clone(), crate::milestones::all(db, char_id)?);
+		}
+		for m in crate::milestones::between(&milestones[char_id], start, end) {
+			events.push(json!({ "t": m.t, "kind": "milestone", "milestone": m.kind, "text": m.text, "pos": Value::Null }));
+		}
+		events.sort_by(|a, b| a["t"].as_f64().unwrap_or(0.0).total_cmp(&b["t"].as_f64().unwrap_or(0.0)));
 		let mut nst = db.prepare("SELECT id, t, text FROM notes WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 		let notes: Vec<Value> = nst
 			.query_map(params![char_id, start, end + SESSION_GAP], |r| Ok(json!({ "id": r.get::<_, i64>(0)?, "t": r.get::<_, f64>(1)?, "text": r.get::<_, String>(2)? })))?

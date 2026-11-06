@@ -240,6 +240,9 @@
 	.k-level .ji { background: var(--success); }
 	.k-accept .ji, .k-turnin .ji { background: var(--quest); }
 	.k-mark .ji, .k-note .ji { background: var(--accent); }
+	/* Milestones (a first, a round number): a star, and the line a little stronger. */
+	.k-milestone .ji { width: 12px; height: 12px; border-radius: 0; background: var(--accent); mask: url(/glyph/star.png) center / contain no-repeat; -webkit-mask: url(/glyph/star.png) center / contain no-repeat; }
+	.k-milestone span { font-weight: 600; color: var(--accent); }
 	.k-zone { color: var(--textDim); }
 	.who { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; flex-basis: 100%; }
 	.dot { width: 8px; height: 8px; border-radius: 50%; }

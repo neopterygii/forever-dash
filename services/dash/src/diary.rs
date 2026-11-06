@@ -76,6 +76,8 @@ pub struct Facts {
 	pub bosses_defeated: i64,
 	pub hearth_set_at: Option<String>,
 	pub marks: Vec<String>,
+	/// The session's milestones, as verb phrases after "I" (milestones.rs).
+	pub firsts: Vec<String>,
 	pub yards_walked: i64,
 }
 
@@ -88,19 +90,19 @@ fn name_of(db: &Connection, kind: &str, id: &str) -> Option<String> {
 }
 
 /// A creature as a sentence names it: "Hogger", or "a Scarlet Initiate" (one of many).
-fn npc_label(db: &Connection, id: &str) -> Option<String> {
+pub(crate) fn npc_label(db: &Connection, id: &str) -> Option<String> {
 	let name = name_of(db, "npc", id)?;
 	let named: bool = id.parse::<i64>().ok().and_then(|i| db.query_row("SELECT 1 FROM npc_named WHERE id = ?1", [i], |_| Ok(true)).optional().ok().flatten()).unwrap_or(false);
 	Some(if named { name } else { with_article(&name) })
 }
 
-fn with_article(name: &str) -> String {
+pub(crate) fn with_article(name: &str) -> String {
 	let vowel = name.chars().next().is_some_and(|c| "AEIOUaeiou".contains(c));
 	format!("{} {name}", if vowel { "an" } else { "a" })
 }
 
 /// The zone a uiMap belongs to (itself when it is a zone, else its nearest zone parent), by name.
-fn zone_of(db: &Connection, cache: &mut HashMap<i64, Option<String>>, map: i64) -> Option<String> {
+pub(crate) fn zone_of(db: &Connection, cache: &mut HashMap<i64, Option<String>>, map: i64) -> Option<String> {
 	if let Some(z) = cache.get(&map) {
 		return z.clone();
 	}
@@ -227,6 +229,7 @@ pub fn facts(db: &Connection, char_id: &str, start: f64, end: f64) -> rusqlite::
 			_ => {}
 		}
 	}
+	f.firsts = crate::milestones::between(&crate::milestones::all(db, char_id)?, start, end).into_iter().map(|m| m.phrase).collect();
 	// A quest both taken and handed in is told once, as done.
 	f.quests_taken.retain(|q| !f.quests_done.contains(q));
 	let mut foes: Vec<(String, i64)> = foes.into_iter().collect();
@@ -430,6 +433,11 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	if let (Some(a), Some(b)) = (f.level_from, f.level_to) {
 		out.push(if b - a <= 1 { format!("I reached level {b}.") } else { format!("I grew from level {a} to {b}.") });
 	}
+	if !f.firsts.is_empty() {
+		let shown: Vec<String> = f.firsts.iter().take(4).cloned().collect();
+		let more = if f.firsts.len() > 4 { format!(", and {} more firsts besides", count((f.firsts.len() - 4) as i64)) } else { String::new() };
+		out.push(format!("{} I {}{more}.", pick(seed, 5, &["A day of firsts, too:", "And some firsts:", "New things, too:"]), list(&shown)));
+	}
 	for m in f.marks.iter().take(2) {
 		out.push(format!("I noted down: “{m}”."));
 	}
@@ -470,7 +478,7 @@ fn capitalize(s: &str) -> String {
 // The model's entry.
 
 /// Bumped when the prompt or its facts change: entries written with an older one are written again.
-const PROMPT_VERSION: u32 = 2;
+const PROMPT_VERSION: u32 = 3;
 
 const SYSTEM: &str = "You write one diary entry for a World of Warcraft character, in their own first-person voice, about one play session. \
 Use only the facts given: never invent places, people, quests, items, weather, numbers or outcomes. \
@@ -517,6 +525,7 @@ fn prompt_facts(f: &Facts) -> Value {
 	if !f.instances.is_empty() { put("went_into", json!({ "places": f.instances, "powers_defeated_inside": f.bosses_defeated })); }
 	if let Some(h) = &f.hearth_set_at { put("made_home_at", json!(h)); }
 	if !f.marks.is_empty() { put("own_notes", json!(f.marks.iter().take(2).collect::<Vec<_>>())); }
+	if !f.firsts.is_empty() { put("milestones_firsts", json!(f.firsts.iter().take(5).collect::<Vec<_>>())); }
 	if f.yards_walked >= 3000 { put("walked", json!(format!("about {} yards", round_yards(f.yards_walked)))); }
 	v
 }

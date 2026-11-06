@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS quest_ref (
 );
 ";
 
+/// An item's name from the imported items table.
+pub fn item_name(db: &Connection, id: &str) -> Option<String> {
+	let id: i64 = id.parse().ok()?;
+	db.query_row("SELECT name FROM items WHERE id = ?1", [id], |r| r.get(0)).optional().ok().flatten()
+}
+
 /// A name by kind (`npc`, `quest`, `object`, `area`, `spell`, `map`) and id.
 pub fn name(db: &Connection, kind: &str, id: &str) -> Option<String> {
 	let id: i64 = id.parse().ok()?;

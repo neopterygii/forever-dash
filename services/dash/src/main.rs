@@ -21,6 +21,7 @@
 mod db;
 mod diary;
 mod ingest;
+mod milestones;
 mod names;
 mod read;
 mod spoken;
