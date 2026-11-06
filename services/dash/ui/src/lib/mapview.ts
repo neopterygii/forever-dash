@@ -36,6 +36,7 @@ export interface MapViewApi {
 	setContinent(c: number): void;
 	fitWorld(c: number, pts: [number, number][], opts?: { padding?: number; maxZoom?: number; animate?: boolean }): void;
 	resize(): void;
+	setLayer(name: 'terrain' | 'zoneArt' | 'labels' | 'grid', on: boolean): void;
 	destroy(): void;
 	on(event: 'marker', fn: (e: { marker: Marker }) => void): () => void;
 	on(event: 'pick', fn: (e: { hit: unknown }) => void): () => void;
