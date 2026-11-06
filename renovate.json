@@ -3,6 +3,7 @@
   "description": "forever-dash fork: follow only upstream Polestar's addon releases (overlay/upstream.txt). Upstream's own dependencies are upstream's business, so every other manager is off.",
   "extends": ["config:recommended"],
   "enabledManagers": ["custom.regex"],
+  "forkProcessing": "enabled",
   "dependencyDashboard": false,
   "timezone": "America/New_York",
   "prHourlyLimit": 0,
