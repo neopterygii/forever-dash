@@ -5,6 +5,9 @@
 //
 //   node services/dash/tools/phone-check.cjs [server=http://127.0.0.1:8799] [out dir=phone-check]
 //
+// Local servers only: the live site sits behind CrowdSec, which bans the house's IP for a burst like this
+// (it did once). The script refuses a non-local server unless PHONE_CHECK_ALLOW_REMOTE=1.
+//
 // Needs playwright-core (services/dash/ui devDependency) and a Chromium: $CHROME, else Playwright's
 // cached one (~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome). Exit code 1 when a check fails.
 const fs = require('node:fs');
@@ -12,6 +15,14 @@ const path = require('node:path');
 const { chromium } = require(require.resolve('playwright-core', { paths: [path.join(__dirname, '../ui')] }));
 
 const server = process.argv[2] || 'http://127.0.0.1:8799';
+{
+	const host = new URL(server).hostname;
+	const local = host === 'localhost' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^100\./.test(host) || host.endsWith('.ts.net');
+	if (!local && process.env.PHONE_CHECK_ALLOW_REMOTE !== '1') {
+		console.error(`refusing ${server}: run the phone pass against a local server (CrowdSec bans bursts on the live site)`);
+		process.exit(2);
+	}
+}
 const out = process.argv[3] || 'phone-check';
 const PHONES = [
 	{ name: 'iphone', width: 390, height: 844 },
