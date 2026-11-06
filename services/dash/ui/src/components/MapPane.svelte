@@ -265,6 +265,8 @@
 		.legend { display: none; }
 		.player { flex-wrap: wrap; gap: 8px; }
 		.player > select:first-child { flex: 1 1 100%; min-width: 0; }
-		.clock { min-width: 0; font-size: 11px; text-align: left; order: 5; flex: 1 1 auto; }
+		/* Play, the slider and the speed on one line, the slider taking the room; the time under them. */
+		.scrub { flex: 1 1 0; min-width: 100px; }
+		.clock { min-width: 0; font-size: 11px; text-align: left; order: 5; flex: 1 1 100%; }
 	}
 </style>

@@ -16,3 +16,12 @@ h2, h3, h4 { margin: 0; font-weight: 600; }
 :focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
 * { scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
 select option { background: var(--panel); color: var(--text); }
+
+/* Phones and other touch screens: every control a finger can hit (about 40px), without changing the
+   desktop layout. min-height wins over a component's own smaller height. Rows that are whole-width
+   buttons (journal lines) set their own padding instead. */
+@media (pointer: coarse), (max-width: 720px) {
+	button, select, [role='button'], input:not([type='range']):not([type='checkbox']):not([type='radio']) { min-height: 40px; }
+	input[type='range'] { min-height: 32px; }
+	button.qt, button.nb, button.close, button.play, button.icon { min-width: 40px; }
+}

@@ -28,5 +28,8 @@
 	.nb:hover { background: var(--hover); }
 	.nb.on { background: var(--quest); color: var(--bg); }
 	.nb:focus-visible { outline: 1px solid var(--focus); }
+	@media (pointer: coarse), (max-width: 720px) {
+		.nb { min-width: 40px; justify-content: center; }
+	}
 	i { width: 10px; height: 10px; background: currentColor; mask: var(--g) center / contain no-repeat; -webkit-mask: var(--g) center / contain no-repeat; }
 </style>

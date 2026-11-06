@@ -55,7 +55,9 @@
 <style>
 	:global(#app) { height: 100%; }
 	.app { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100%; }
-	main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
+	/* One column that never grows past the screen: an implicit auto column sized to the top bar's full text,
+	   so a selected character's long title line widened the page instead of ending in an ellipsis. */
+	main { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 	.body { position: relative; min-height: 0; }
 	.tabs { display: flex; gap: 4px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 	.back { display: inline-flex; align-items: center; gap: 4px; flex: none; background: var(--chip); border: 0; padding: 6px 10px 6px 6px; border-radius: 8px; color: var(--text); font-weight: 600; cursor: pointer; }
@@ -69,7 +71,8 @@
 	.jt.on img { filter: brightness(0); }
 	.error { position: fixed; bottom: 0; left: 0; margin: 8px; color: var(--danger); background: var(--panel); padding: 6px 10px; border-radius: 6px; }
 	@media (max-width: 720px) {
-		.app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+		/* minmax(0, …): a bare 1fr lets the top bar's widest content widen the page (sideways scroll on phones). */
+		.app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 		.who { font-size: 11px; }
 	}
 </style>

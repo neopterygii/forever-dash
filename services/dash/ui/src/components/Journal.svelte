@@ -160,7 +160,7 @@
 					<span><b>{(s.yards / 1000).toFixed(1)}k</b> yd walked</span>
 				</div>
 				<button class="logt" aria-expanded={!!logOpen[sessionKey(s)]} onclick={() => (logOpen[sessionKey(s)] = !logOpen[sessionKey(s)])}>
-					<i class:on={logOpen[sessionKey(s)]}></i>{logOpen[sessionKey(s)] ? 'Hide the log' : `The log · ${items(s).length} entries`}
+					<i class:on={logOpen[sessionKey(s)]}></i>{logOpen[sessionKey(s)] ? 'Hide the log' : `The log · ${items(s).length} ${items(s).length === 1 ? 'entry' : 'entries'}`}
 				</button>
 				{#if logOpen[sessionKey(s)]}
 				<ul class="events">
@@ -194,7 +194,7 @@
 	.journal { display: none; position: absolute; z-index: 5; top: 12px; right: 12px; bottom: 84px; width: min(400px, calc(100% - 24px)); overflow: auto; padding: 0 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--border); box-shadow: var(--window-shadow); backdrop-filter: blur(6px); }
 	.journal.on { display: block; animation: drop 0.16s ease-out; }
 	@keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
-	.jh { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 10px 2px 8px; background: inherit; }
+	.jh { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 10px 2px 8px; background: var(--bg); }
 	.jh h2 { font-size: 15px; }
 	.jh small { margin-left: 8px; color: var(--textDim); font-weight: 500; font-size: 12px; }
 	.close { background: none; border: 0; font-size: 22px; line-height: 1; color: var(--textDim); padding: 0 4px; }
@@ -248,6 +248,9 @@
 	.note input { flex: 1; background: var(--well); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 	.note button { background: var(--chip); border: 0; border-radius: 6px; padding: 6px 12px; }
 	.empty { color: var(--textDim); text-align: center; margin: 30px 0; }
+	@media (pointer: coarse), (max-width: 720px) {
+		.events .ev { padding: 8px 0; }
+	}
 	@media (max-width: 720px) {
 		.journal { left: 8px; right: 8px; width: auto; top: 8px; }
 	}

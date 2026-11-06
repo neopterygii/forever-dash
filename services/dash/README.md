@@ -50,6 +50,13 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   rewrites closed sessions in prose, newest first, and keeps the answer; a failure keeps the
   template entry until the next round. `POST /api/diary` stores your own entry (empty = back to the
   written one). Only recorded facts go into an entry or a prompt.
+- **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with
+  sample data and run `node tools/phone-check.cjs http://127.0.0.1:8799 <out dir>`. It opens every view
+  (overview, a character, both journals with a quest card, diary editing, gear, bags and stats) at 390x844
+  and 360x780 as a touch phone, saves a screenshot of each and fails on sideways scrolling, anything past
+  the screen's edge and console or request errors (a missing item icon is expected); it lists tap targets
+  under 32 px. Then look at the screenshots. Touch sizes come from one rule in `ui/src/app.css`
+  (`pointer: coarse` or narrow): about 40 px per control, desktop unchanged.
 - **Quest narration** (`serve --spoken <dir>`, `src/spoken.rs`): the journal's accept and turn-in
   lines play the voice-over the Spoken addons play in game (rusty-key/spoken-wow). The server
   follows its `quests-audio/v*` releases (at start, then daily): it downloads

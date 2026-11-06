@@ -194,6 +194,10 @@
 	.bagname { font-size: 12px; color: var(--textDim); margin-bottom: 6px; }
 	.grid { display: grid; grid-template-columns: repeat(auto-fill, 36px); gap: 4px; }
 	@media (max-width: 520px) {
+		/* The tabs under the name, so the level and race line stays on one or two lines. */
+		header { flex-wrap: wrap; }
+		nav { order: 3; flex: 1 1 100%; justify-content: stretch; }
+		nav button { flex: 1; }
 		.list { columns: 1; }
 		.big { width: 84px; height: 84px; }
 	}
