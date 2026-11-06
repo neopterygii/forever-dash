@@ -130,6 +130,7 @@ export interface Addons {
 	channel: Channel;
 	autoCheck: boolean;
 	autoInstall: boolean;
+	updateWhileRunning: boolean;
 	gameFound: boolean;
 	gameRunning: boolean;
 	products: Product[];

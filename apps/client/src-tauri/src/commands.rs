@@ -158,7 +158,7 @@ pub fn changelog(engine: Engine_, id: String) -> Result<Changelog, String> {
 
 /// The Addons settings; a channel change looks for updates again.
 #[tauri::command]
-pub async fn set_addon_prefs(engine: Engine_<'_>, channel: Option<Channel>, auto_check: Option<bool>, auto_install: Option<bool>) -> Result<(), String> {
+pub async fn set_addon_prefs(engine: Engine_<'_>, channel: Option<Channel>, auto_check: Option<bool>, auto_install: Option<bool>, update_while_running: Option<bool>) -> Result<(), String> {
 	let changed_channel = channel.is_some_and(|c| c != engine.lock().settings.channel);
 	engine.save_settings(|s| {
 		if let Some(c) = channel {
@@ -169,6 +169,9 @@ pub async fn set_addon_prefs(engine: Engine_<'_>, channel: Option<Channel>, auto
 		}
 		if let Some(v) = auto_install {
 			s.auto_install = v;
+		}
+		if let Some(v) = update_while_running {
+			s.update_while_running = v;
 		}
 	})?;
 	if changed_channel {

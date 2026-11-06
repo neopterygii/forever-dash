@@ -116,13 +116,17 @@
 		<section class="section">
 			<h2>Addons</h2>
 			<div class="rows">
-				<div class="row" title="Looks for new releases every 6 hours and says so in the tray.">
+				<div class="row" title="Looks for new releases every hour and says so in the tray.">
 					<span class="label">Check for updates automatically</span>
 					<button class="toggle" role="switch" aria-checked={snapshot.addons.autoCheck} aria-label="Check for updates automatically" onclick={() => run('autoCheck', () => api.setAddonPrefs({ autoCheck: !snapshot.addons.autoCheck }))}></button>
 				</div>
-				<div class="row" title="Installs updates to Polestar's own addons as soon as they are found, while the game is closed. Community Guides have their own setting below.">
+				<div class="row" title="Installs updates to Polestar's own addons as soon as they are found (while the game is closed, unless the next setting is on). Community Guides have their own setting below.">
 					<span class="label">Install addon updates automatically</span>
 					<button class="toggle" role="switch" aria-checked={snapshot.addons.autoInstall} aria-label="Install addon updates automatically" onclick={() => run('autoInstall', () => api.setAddonPrefs({ autoInstall: !snapshot.addons.autoInstall }))}></button>
+				</div>
+				<div class="row" title="Updates go ahead while World of Warcraft is running, without asking twice. The game keeps the addons it loaded; the new ones load at your next /reload or login.">
+					<span class="label">Update while the game is running</span>
+					<button class="toggle" role="switch" aria-checked={snapshot.addons.updateWhileRunning} aria-label="Update while the game is running" onclick={() => run('updateWhileRunning', () => api.setAddonPrefs({ updateWhileRunning: !snapshot.addons.updateWhileRunning }))}></button>
 				</div>
 				<div class="row" title="Beta also offers pre-releases: newer, less tested.">
 					<span class="label">Update channel</span>

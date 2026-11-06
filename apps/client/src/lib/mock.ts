@@ -84,6 +84,7 @@ const base: Snapshot = {
 		channel: 'stable',
 		autoCheck: true,
 		autoInstall: false,
+		updateWhileRunning: false,
 		gameFound: true,
 		gameRunning: scene === 'running',
 		products: [

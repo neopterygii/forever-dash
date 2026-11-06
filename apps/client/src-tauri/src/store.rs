@@ -57,13 +57,16 @@ pub struct Settings {
 	pub server_url: String,
 	/// Addon updates: pre-releases too ("beta") or only releases ("stable").
 	pub channel: Channel,
-	/// Look for addon updates every 6 hours (and say so in the tray).
+	/// Look for addon updates every hour (and say so in the tray).
 	pub auto_check: bool,
 	/// Install addon updates as soon as they are found (while the game is closed). Polestar's
 	/// own addons only: community packs have `auto_update_packs`.
 	pub auto_install: bool,
 	/// Install routine community pack updates by themselves (packs.rs `auto_update_ok`).
 	pub auto_update_packs: bool,
+	/// forever-dash: addon updates (automatic or clicked) go ahead while the game runs; the new
+	/// files load at the next /reload or login.
+	pub update_while_running: bool,
 	/// The community packs site (polestar.guide; a developer's own in Settings > Advanced).
 	pub packs_url: String,
 	/// Tell the packs site which pack was installed (opt-in): the pack and version, nothing else.
@@ -132,6 +135,7 @@ impl Default for Settings {
 			auto_check: true,
 			auto_install: false,
 			auto_update_packs: false,
+			update_while_running: false,
 			packs_url: crate::packs::DEFAULT_BASE.to_owned(),
 			pack_telemetry: false,
 			dash_url: String::new(),
