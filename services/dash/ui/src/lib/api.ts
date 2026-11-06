@@ -17,6 +17,13 @@ export interface Character {
 	class: string | null;
 	faction: string | null;
 	level: number | null;
+	/** Forever characters have surnames. */
+	surname: string | null;
+	/** UnitSex: 2 male, 3 female. */
+	sex: number | null;
+	xp: number | null;
+	xpMax: number | null;
+	rested: number | null;
 	chunks: number;
 	first: number | null;
 	last: number | null;

@@ -55,7 +55,8 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 		"SELECT c.char_id, c.name, c.realm, c.race, c.class, c.faction, c.level,
 		        (SELECT COUNT(*) FROM chunks k WHERE k.char_id = c.char_id),
 		        (SELECT MIN(first_t) FROM chunks k WHERE k.char_id = c.char_id),
-		        (SELECT MAX(last_t) FROM chunks k WHERE k.char_id = c.char_id)
+		        (SELECT MAX(last_t) FROM chunks k WHERE k.char_id = c.char_id),
+		        c.surname, c.sex, c.xp, c.xp_max, c.rested
 		 FROM characters c ORDER BY 10 DESC",
 	)?;
 	let mut out = Vec::new();
@@ -64,6 +65,8 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 			"id": r.get::<_, String>(0)?, "name": r.get::<_, Option<String>>(1)?, "realm": r.get::<_, Option<String>>(2)?,
 			"race": r.get::<_, Option<String>>(3)?, "class": r.get::<_, Option<String>>(4)?, "faction": r.get::<_, Option<String>>(5)?,
 			"level": r.get::<_, Option<i64>>(6)?, "chunks": r.get::<_, i64>(7)?, "first": r.get::<_, Option<f64>>(8)?, "last": r.get::<_, Option<f64>>(9)?,
+			"surname": r.get::<_, Option<String>>(10)?, "sex": r.get::<_, Option<i64>>(11)?,
+			"xp": r.get::<_, Option<i64>>(12)?, "xpMax": r.get::<_, Option<i64>>(13)?, "rested": r.get::<_, Option<i64>>(14)?,
 		}))
 	})?;
 	for row in rows {

@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Who {
 	pub name: String,
+	/// Forever characters have surnames (the per-character folder is `<Name>-<Surname>`).
+	#[serde(default)]
+	pub surname: String,
 	pub realm: String,
 }
 
@@ -50,8 +53,30 @@ fn store_map(tx: &Connection, fields: &str) -> rusqlite::Result<()> {
 	Ok(())
 }
 
+/// Rebuilds every derived table from the stored raw chunks (after a parser or schema change).
+pub fn reparse(db: &mut Connection) -> Result<(usize, usize), String> {
+	let tx = db.transaction().map_err(|e| e.to_string())?;
+	crate::db::clear_derived(&tx).map_err(|e| e.to_string())?;
+	let texts: Vec<String> = tx
+		.prepare("SELECT text FROM chunks ORDER BY first_t")
+		.and_then(|mut st| st.query_map([], |r| r.get(0))?.collect())
+		.map_err(|e| e.to_string())?;
+	let (mut ok, mut bad) = (0, 0);
+	for text in &texts {
+		match decode_chunk(text) {
+			Ok(chunk) => {
+				derive(&tx, &chunk).map_err(|e| e.to_string())?;
+				ok += 1;
+			}
+			Err(_) => bad += 1,
+		}
+	}
+	tx.commit().map_err(|e| e.to_string())?;
+	Ok((ok, bad))
+}
+
 /// Derived rows for one newly stored chunk.
-fn derive(tx: &Connection, chunk: &Chunk) -> rusqlite::Result<()> {
+pub(crate) fn derive(tx: &Connection, chunk: &Chunk) -> rusqlite::Result<()> {
 	let id = &chunk.char_id;
 	tx.execute("INSERT INTO characters (char_id) VALUES (?1) ON CONFLICT DO NOTHING", [id])?;
 	for r in &chunk.records {
@@ -59,15 +84,21 @@ fn derive(tx: &Connection, chunk: &Chunk) -> rusqlite::Result<()> {
 			Kind::Session => {
 				// Later chunks may arrive first: keep the level of the latest record.
 				tx.execute(
-					"UPDATE characters SET race = ?2, class = ?3, faction = ?4, level = ?5, level_t = ?6
+					"UPDATE characters SET race = ?2, class = ?3, faction = ?4, level = ?5, level_t = ?6, sex = ?7
 					 WHERE char_id = ?1 AND (level_t IS NULL OR level_t <= ?6)",
-					params![id, r.get("race"), r.get("class"), r.get("faction"), r.int("level"), r.t],
+					params![id, r.get("race"), r.get("class"), r.get("faction"), r.int("level"), r.t, r.int("sex")],
 				)?;
 			}
 			Kind::Level => {
 				tx.execute(
 					"UPDATE characters SET level = ?2, level_t = ?3 WHERE char_id = ?1 AND (level_t IS NULL OR level_t <= ?3)",
 					params![id, r.int("level"), r.t],
+				)?;
+			}
+			Kind::Xp => {
+				tx.execute(
+					"UPDATE characters SET xp = ?2, xp_max = ?3, rested = ?4, xp_t = ?5 WHERE char_id = ?1 AND (xp_t IS NULL OR xp_t <= ?5)",
+					params![id, r.int("xp"), r.int("xpMax"), r.int("rested"), r.t],
 				)?;
 			}
 			Kind::Map => {
@@ -112,9 +143,9 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 	for (char_id, who) in &req.characters {
 		if valid_char_id(char_id) {
 			tx.execute(
-				"INSERT INTO characters (char_id, name, realm) VALUES (?1, ?2, ?3)
-				 ON CONFLICT (char_id) DO UPDATE SET name = ?2, realm = ?3",
-				params![char_id, who.name, who.realm],
+				"INSERT INTO characters (char_id, name, surname, realm) VALUES (?1, ?2, NULLIF(?3, ''), ?4)
+				 ON CONFLICT (char_id) DO UPDATE SET name = ?2, surname = NULLIF(?3, ''), realm = ?4",
+				params![char_id, who.name, who.surname, who.realm],
 			)
 			.map_err(|e| e.to_string())?;
 		}

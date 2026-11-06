@@ -76,8 +76,33 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 ";
 
+/// Columns added after the first schema: (table, column, type). Added when missing.
+const ADDED: &[(&str, &str, &str)] = &[
+	("characters", "surname", "TEXT"),
+	("characters", "sex", "INTEGER"),
+	("characters", "xp", "INTEGER"),
+	("characters", "xp_max", "INTEGER"),
+	("characters", "rested", "INTEGER"),
+	("characters", "xp_t", "REAL"),
+];
+
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
 	let db = Connection::open(path)?;
 	db.execute_batch(SCHEMA)?;
+	for (table, column, ty) in ADDED {
+		let has: bool = db.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
+		if !has {
+			db.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ty}"))?;
+		}
+	}
 	Ok(db)
+}
+
+/// Empties every table derived from the raw chunks (not chunks, the names the uploader sent, or notes).
+pub fn clear_derived(db: &Connection) -> rusqlite::Result<()> {
+	db.execute_batch(
+		"DELETE FROM positions; DELETE FROM events; DELETE FROM quests;
+		 UPDATE characters SET race = NULL, class = NULL, faction = NULL, level = NULL, level_t = NULL,
+		   sex = NULL, xp = NULL, xp_max = NULL, rested = NULL, xp_t = NULL;",
+	)
 }

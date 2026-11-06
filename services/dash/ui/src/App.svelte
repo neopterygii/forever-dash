@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { dash } from './lib/dash.svelte';
+	import { fullName } from './lib/format';
 	import Sidebar from './components/Sidebar.svelte';
 	import MapPane from './components/MapPane.svelte';
 	import Journal from './components/Journal.svelte';
@@ -11,7 +12,7 @@
 		if (dash.mode === 'overview') return dash.overview ? `All characters · last ${dash.overview.hours} h of play each` : '';
 		const f = dash.focus;
 		const c = f && dash.chars.find((x) => x.id === f.id);
-		return c && f ? `${c.name}-${c.realm} · level ${c.level} · ${f.kept} of ${f.points} points` : '';
+		return c && f ? `${fullName(c)} · level ${c.level} · ${f.kept} of ${f.points} points` : '';
 	});
 </script>
 
