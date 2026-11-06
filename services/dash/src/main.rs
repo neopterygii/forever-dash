@@ -80,6 +80,14 @@ async fn journal(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
 	read::journal(&db.lock().unwrap(), &q.char).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
+async fn snapshot(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
+	read::snapshot(&db.lock().unwrap(), &q.char).map(Json).map_or_else(err500, IntoResponse::into_response)
+}
+
+async fn item_ids(State(db): State<Db>) -> Response {
+	read::item_ids(&db.lock().unwrap()).map(|v| Json(json!(v))).map_or_else(err500, IntoResponse::into_response)
+}
+
 async fn sessions(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
 	read::sessions(&db.lock().unwrap(), &q.char).map(|s| Json(json!(s))).map_or_else(err500, IntoResponse::into_response)
 }
@@ -158,6 +166,8 @@ async fn serve(args: &[String]) {
 		.route("/api/journal", get(journal))
 		.route("/api/overview", get(overview))
 		.route("/api/sessions", get(sessions))
+		.route("/api/snapshot", get(snapshot))
+		.route("/api/item-ids", get(item_ids))
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
 		.route("/api/stats", get(stats))
@@ -177,6 +187,39 @@ struct Found {
 	account: String,
 	vars: sv::SavedVars,
 	characters: BTreeMap<String, Who>,
+	/// charId -> PolestarDashSnapshotDB.
+	snapshots: BTreeMap<String, Value>,
+	/// charId -> Polestar's PolestarDB.alts.chars entry.
+	alts: BTreeMap<String, Value>,
+}
+
+/// A Lua value as JSON: tables become objects keyed by their keys as text (arrays too, so `[0]`, `[-2]`
+/// and `[1]` keep their meaning), numbers that are whole stay integers.
+fn lua_json(v: &lua::Value) -> Value {
+	match v {
+		lua::Value::Nil => Value::Null,
+		lua::Value::Bool(b) => json!(b),
+		lua::Value::Num(n) if n.fract() == 0.0 && n.abs() < 9.0e15 => json!(*n as i64),
+		lua::Value::Num(n) => json!(n),
+		lua::Value::Str(s) => json!(s),
+		lua::Value::Table(t) => {
+			let key = |k: &lua::Value| match k {
+				lua::Value::Str(s) => s.clone(),
+				lua::Value::Num(n) if n.fract() == 0.0 => format!("{}", *n as i64),
+				lua::Value::Num(n) => n.to_string(),
+				lua::Value::Bool(b) => b.to_string(),
+				_ => String::new(),
+			};
+			Value::Object(t.iter().filter(|(_, v)| *v != lua::Value::Nil).map(|(k, v)| (key(k), lua_json(v))).collect())
+		}
+	}
+}
+
+/// The value of global `name` in a SavedVariables file, as JSON.
+fn sv_global(path: &Path, name: &str) -> Option<Value> {
+	let text = std::fs::read_to_string(path).ok()?;
+	let vars = lua::parse_assignments(&text).ok()?;
+	vars.iter().rev().find(|(n, _)| n == name).map(|(_, v)| lua_json(v)).filter(|v| v.is_object())
 }
 
 /// Every account of a WTF folder with Recorder data, and charId -> name/realm from the
@@ -199,6 +242,8 @@ fn scan(wtf: &Path) -> Vec<Found> {
 			}
 		};
 		let mut characters = BTreeMap::new();
+		let mut snapshots = BTreeMap::new();
+		let polestar_alts = sv_global(&acct.join("SavedVariables").join("Polestar.lua"), "PolestarDB").and_then(|db| db.get("alts")?.get("chars").cloned());
 		for realm in dirs(&acct).into_iter().filter(|p| !p.ends_with("SavedVariables")) {
 			for ch in dirs(&realm) {
 				let Ok(text) = std::fs::read_to_string(ch.join("SavedVariables").join(sv::FILE_NAME)) else { continue };
@@ -211,11 +256,25 @@ fn scan(wtf: &Path) -> Vec<Found> {
 					let folder = name(&ch);
 					let (first, surname) = folder.split_once('-').filter(|(n, s)| !n.is_empty() && !s.is_empty()).map_or((folder.as_str(), ""), |(n, s)| (n, s));
 					let who = Who { name: first.to_string(), surname: surname.to_string(), realm: name(&realm) };
+					if let Some(snap) = sv_global(&ch.join("SavedVariables").join("Polestar_DashSnapshot.lua"), "PolestarDashSnapshotDB") {
+						snapshots.insert(id.clone(), snap);
+					}
 					characters.insert(id, who);
 				}
 			}
 		}
-		out.push(Found { account: acct.file_name().unwrap().to_string_lossy().into_owned(), vars, characters });
+		// Polestar's entries are keyed "Name-Realm" by the game's name (no surname): match on the name,
+		// only when one entry has it.
+		let mut alts = BTreeMap::new();
+		if let Some(Value::Object(entries)) = &polestar_alts {
+			for (id, who) in &characters {
+				let mut hits = entries.values().filter(|e| e.get("name").and_then(Value::as_str) == Some(who.name.as_str()));
+				if let (Some(e), None) = (hits.next(), hits.next()) {
+					alts.insert(id.clone(), e.clone());
+				}
+			}
+		}
+		out.push(Found { account: acct.file_name().unwrap().to_string_lossy().into_owned(), vars, characters, snapshots, alts });
 	}
 	out
 }
@@ -246,6 +305,8 @@ fn upload_cmd(args: &[String]) -> Result<(), String> {
 				chunks: batch,
 				maps: if i == 0 { f.vars.maps.clone() } else { BTreeMap::new() },
 				characters: if i == 0 { f.characters.clone() } else { BTreeMap::new() },
+				snapshots: if i == 0 { f.snapshots.clone() } else { BTreeMap::new() },
+				alts: if i == 0 { f.alts.clone() } else { BTreeMap::new() },
 			};
 			let resp = http.post(format!("{server}/v1/upload")).json(&body).send().map_err(|e| e.to_string())?;
 			if !resp.status().is_success() {
@@ -257,10 +318,12 @@ fn upload_cmd(args: &[String]) -> Result<(), String> {
 			total.rejected.extend(r.rejected);
 		}
 		println!(
-			"{} (install {}, {} characters named): {} accepted, {} duplicate, {} rejected",
+			"{} (install {}, {} characters named, {} snapshots, {} Polestar entries): {} accepted, {} duplicate, {} rejected",
 			f.account,
 			f.vars.install,
 			f.characters.len(),
+			f.snapshots.len(),
+			f.alts.len(),
 			total.accepted.len(),
 			total.duplicate.len(),
 			total.rejected.len()

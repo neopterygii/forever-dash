@@ -77,6 +77,36 @@ const QUESTS = [
 
 const firstDay = Date.UTC(2026, 10, 2) / 86400000;
 const yesterday = firstDay + days - 1;
+// Polestar_DashSnapshot's PolestarDashSnapshotDB (overlay/addons/Polestar_DashSnapshot/Snapshot.lua, schema 1)
+// for the characters with a kit: real item ids of the Forever client (Item/ItemSparse).
+CHARS[0].kit = {
+	equip: { 4: 2575, 5: 250488, 7: 2303, 8: 250482, 9: 3323, 10: 250508, 15: 3322, 16: 935, 17: 257255, 18: 4763 },
+	bags: { 0: [16, { 1: '6948:1', 2: '159:5', 3: '117:4', 5: '2589:12', 6: '4865:3' }], 1: [6, { 1: '2770:8' }, 4496] },
+	bank: { '-1': [24, { 1: '2589:20', 4: '2770:14' }] },
+	money: 1234,
+};
+CHARS[2].kit = {
+	equip: { 5: 250489, 7: 281267, 16: 9513 },
+	bags: { 0: [16, { 1: '6948:1', 2: '159:10' }] },
+	money: 87,
+};
+function snapshotOf(ch) {
+	const at = (firstDay + days) * 86400 - 3600;
+	const bags = (b) => Object.fromEntries(Object.entries(b).map(([k, [size, slots, item]]) => [k, item ? { size, item, slots } : { size, slots }]));
+	const d = { schema: 1, name: ch.name, realm: ch.realm, money: ch.kit.money, moneyAt: at, bags: bags(ch.kit.bags), bagsAt: at, equipAt: at, equip: {} };
+	for (const [slot, id] of Object.entries(ch.kit.equip)) d.equip[slot] = `item:${id}:0:0:0:0:0:0:0:${ch.level}:::::`;
+	if (ch.kit.bank) Object.assign(d, { bank: bags(ch.kit.bank), bankAt: at - 7200 });
+	return d;
+}
+// A JS value as a Lua literal (SavedVariables style; numeric keys stay numeric).
+function luaOf(v, ind = '') {
+	if (typeof v === 'string') return esc(v);
+	if (typeof v !== 'object') return String(v);
+	const inner = ind + '\t';
+	const key = (k) => (/^-?\d+$/.test(k) ? `[${k}]` : `[${esc(k)}]`);
+	return `{\n${Object.entries(v).map(([k, x]) => `${inner}${key(k)} = ${luaOf(x, inner)},`).join('\n')}\n${ind}}`;
+}
+
 // One Recorder install per WoW account folder.
 const ACCOUNTS = { DASHTEST: { install: 'd4shtest0001', chunks: {}, mapsSeen: {}, seq: 0 }, DASHFRIEND: { install: 'd4shfr1end02', chunks: {}, mapsSeen: {}, seq: 0 } };
 const accountOf = (ch) => ACCOUNTS[ch.account || 'DASHTEST'];
@@ -258,6 +288,7 @@ for (const [name, A] of Object.entries(ACCOUNTS)) {
 		const dir = path.join(acct, ch.realm, ch.name, 'SavedVariables');
 		fs.mkdirSync(dir, { recursive: true });
 		fs.writeFileSync(path.join(dir, 'Polestar_Recorder.lua'), `\nPolestarRecorderCharDB = {\n\t["id"] = ${esc(ch.id)},\n\t["textSeen"] = {\n\t},\n}\n`);
+		if (ch.kit) fs.writeFileSync(path.join(dir, 'Polestar_DashSnapshot.lua'), `\nPolestarDashSnapshotDB = ${luaOf(snapshotOf(ch))}\n`);
 	}
 	console.log(`${name}: ${A.seq} chunks, ${days} day(s), install ${A.install}`);
 }

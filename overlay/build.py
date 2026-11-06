@@ -70,13 +70,17 @@ def main(src, n, out):
                 for folder in sorted(os.listdir(add_root)):
                     if not folder.startswith("Polestar_") or folder == "Polestar_Recorder":
                         fail(f"overlay/addons/{folder}: Polestar Client only installs Polestar_* folders")
-                    zout.writestr(zipfile.ZipInfo(f"{folder}/", date), b"")
+                    # Same attributes as upstream's directory entries; without them unzip on Linux
+                    # makes a folder no one can read.
+                    zd = zipfile.ZipInfo(f"{folder}/", date)
+                    zd.external_attr = (0o40755 << 16) | 0x10
+                    zout.writestr(zd, b"")
                     for f in sorted(os.listdir(os.path.join(add_root, folder))):
                         body = open(os.path.join(add_root, folder, f), "rb").read()
                         if f.endswith(".toc"):
                             body = re.sub(rb"^(## Version:)[^\r\n]*", b"\\1 " + version.encode(), body, flags=re.M)
                         zi = zipfile.ZipInfo(f"{folder}/{f}", date)
-                        zi.external_attr = 0o644 << 16
+                        zi.external_attr = 0o100644 << 16
                         zout.writestr(zi, body, compress_type=zipfile.ZIP_DEFLATED)
                         changed += 1
         new_sums.append(f"{sha(open(out_path, 'rb').read())}  {out_name}")
