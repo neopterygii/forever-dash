@@ -49,6 +49,15 @@ export const PIN: Record<string, [string, string]> = {
 export const OVERVIEW_BUFFERS: [number, string][] = [[1, 'Last 1 h of play'], [6, 'Last 6 h of play'], [24, 'Last 24 h of play'], [72, 'Last 72 h of play']];
 export const FOCUS_BUFFERS: [string, string][] = [['session', 'Last session'], ['2', 'Last 2 h of play'], ['6', 'Last 6 h of play'], ['24', 'Last 24 h of play'], ['all', 'All play']];
 
+function readList(key: string): string[] {
+	try {
+		const v = JSON.parse(localStorage.getItem(key) ?? '[]');
+		return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
 class Dash {
 	chars = $state.raw<Character[]>([]);
 	stats = $state.raw<Stats | null>(null);
@@ -61,10 +70,24 @@ class Dash {
 	playing = $state(false);
 	/** The journal panel over the map. */
 	journalOpen = $state(false);
+	/** Per viewer, kept in this browser: characters starred (listed first) and hidden from the map. */
+	starred = $state<string[]>(readList('dash.starred'));
+	hidden = $state<string[]>(readList('dash.hidden'));
+
+	toggle(list: 'starred' | 'hidden', id: string) {
+		const cur = this[list];
+		this[list] = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+		try {
+			localStorage.setItem(`dash.${list}`, JSON.stringify(this[list]));
+		} catch {
+			/* private window or blocked storage: kept for this page only */
+		}
+	}
+
 	/** A spot the map should go to (a journal event clicked): consumed by the map. */
 	focusPoint = $state.raw<{ c: number; wx: number; wy: number } | null>(null);
 	/** The character sheet window: whose, and gear or bags. */
-	sheet = $state<{ id: string; view: 'gear' | 'bags' } | null>(null);
+	sheet = $state<{ id: string; view: 'gear' | 'bags' | 'stats' } | null>(null);
 	/** Bumped to ask the map to fit its view to what is loaded. */
 	fitRequest = $state(0);
 	error = $state<string | null>(null);

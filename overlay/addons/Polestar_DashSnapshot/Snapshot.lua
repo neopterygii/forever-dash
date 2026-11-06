@@ -15,7 +15,11 @@
 --   bank   = same, for the bank (-1) and its bags (5 ...): only read while the bank is open,
 --            so it is the bank as last seen
 --   money                           copper
---   equipAt, bagsAt, bankAt, moneyAt  server time of each part's last read
+--   stats  = { health, power, powerType, str, agi, sta, int, spi, armor }
+--                                   maximum health and power (mana, rage, energy; powerType is the
+--                                   client's token: MANA, RAGE, ENERGY...), the five attributes and
+--                                   armor as the character sheet shows them (with gear and buffs)
+--   equipAt, bagsAt, bankAt, moneyAt, statsAt  server time of each part's last read
 --
 -- When it reads: in the world, five seconds after entering it; then on equipment, bag, money and
 -- bank changes (coalesced, one second). NOTHING on PLAYER_LEAVING_WORLD or PLAYER_LOGOUT: the client
@@ -99,6 +103,29 @@ local function readBank()
 	return out
 end
 
+local STAT_KEYS = { "str", "agi", "sta", "int", "spi" }
+
+local function readStats()
+	local out = {}
+	out.health = readable(UnitHealthMax and UnitHealthMax("player"))
+	out.power = readable(UnitPowerMax and UnitPowerMax("player"))
+	if UnitPowerType then
+		local _, token = UnitPowerType("player")
+		out.powerType = readable(token)
+	end
+	for i, key in ipairs(STAT_KEYS) do
+		if UnitStat then
+			local _, effective = UnitStat("player", i)
+			out[key] = readable(effective)
+		end
+	end
+	if UnitArmor then
+		local _, effective = UnitArmor("player")
+		out.armor = readable(effective)
+	end
+	return out
+end
+
 local function write()
 	pending = false
 	if not inWorld then return end
@@ -115,6 +142,7 @@ local function write()
 		local m = readable(GetMoney())
 		if m then d.money, d.moneyAt = m, t end
 	end
+	if dirty.stats then d.stats, d.statsAt = readStats(), t end
 	dirty = {}
 end
 
@@ -130,11 +158,13 @@ local f = CreateFrame("Frame")
 f:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_ENTERING_WORLD" then
 		inWorld = true
-		C_Timer.After(LOGIN_DELAY, function() mark("equip", "bags", "money") end)
+		C_Timer.After(LOGIN_DELAY, function() mark("equip", "bags", "money", "stats") end)
 	elseif event == "PLAYER_LEAVING_WORLD" then
 		inWorld = false -- and nothing is read
 	elseif event == "PLAYER_EQUIPMENT_CHANGED" then
-		mark("equip")
+		mark("equip", "stats")
+	elseif event == "PLAYER_LEVEL_UP" or event == "UNIT_MAXHEALTH" or event == "UNIT_MAXPOWER" or event == "UNIT_STATS" then
+		mark("stats")
 	elseif event == "BAG_UPDATE_DELAYED" then
 		if bankOpen then mark("bags", "bank") else mark("bags") end
 	elseif event == "PLAYER_MONEY" then
@@ -149,6 +179,10 @@ f:SetScript("OnEvent", function(_, event)
 	end
 end)
 for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_LEAVING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED",
-	"PLAYER_MONEY", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do
+	"PLAYER_MONEY", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED", "PLAYER_LEVEL_UP" }) do
 	pcall(f.RegisterEvent, f, e)
+end
+-- The player's own unit events only (max health, max power, attributes).
+for _, e in ipairs({ "UNIT_MAXHEALTH", "UNIT_MAXPOWER", "UNIT_STATS" }) do
+	if f.RegisterUnitEvent then pcall(f.RegisterUnitEvent, f, e, "player") else pcall(f.RegisterEvent, f, e) end
 end

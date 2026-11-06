@@ -14,7 +14,7 @@
 		<li class:on={dash.mode === 'overview'}>
 			<button class="all" onclick={() => pick(null)}><span class="n">All characters</span></button>
 		</li>
-		{#each dash.chars as c (c.id)}
+		{#each [...dash.chars].sort((a, b) => Number(dash.starred.includes(b.id)) - Number(dash.starred.includes(a.id))) as c (c.id)}
 			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} color={dash.colorOf(c.id)} onpick={() => pick(c.id)} onopen={(view) => (dash.sheet = { id: c.id, view })} />
 		{/each}
 	</ul>

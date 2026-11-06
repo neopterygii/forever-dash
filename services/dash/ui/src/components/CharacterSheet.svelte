@@ -3,7 +3,7 @@
 	// the page, from its latest Polestar_DashSnapshot save and what Polestar itself keeps.
 	import { api, type Container, type Item, type Snapshot } from '../lib/api';
 	import { dash } from '../lib/dash.svelte';
-	import { ago, className, classIconUrl, day, fullName, gold, hhmm, portraitUrl, qualityColor, raceName, realmName } from '../lib/format';
+	import { ago, className, classIconUrl, day, fullName, gold, hhmm, portraitUrl, powerColor, qualityColor, raceName, realmName } from '../lib/format';
 	import ItemIcon from './ItemIcon.svelte';
 
 	let snap = $state.raw<Snapshot | null | undefined>(undefined);
@@ -65,6 +65,7 @@
 			<nav>
 				<button class:on={sheet.view === 'gear'} onclick={() => (dash.sheet = { id: sheet.id, view: 'gear' })}>Gear</button>
 				<button class:on={sheet.view === 'bags'} onclick={() => (dash.sheet = { id: sheet.id, view: 'bags' })}>Bags</button>
+				<button class:on={sheet.view === 'stats'} onclick={() => (dash.sheet = { id: sheet.id, view: 'stats' })}>Stats</button>
 			</nav>
 			<button class="close" aria-label="Close" onclick={close}>×</button>
 		</header>
@@ -73,6 +74,24 @@
 			<p class="empty">Loading…</p>
 		{:else if snap === null}
 			<p class="empty">No gear or bags yet: they come from the Polestar_DashSnapshot addon, after this character logs in with it.</p>
+		{:else if sheet.view === 'stats'}
+			{@const st = snap.stats}
+			{#if !st}
+				<p class="empty">No attributes yet: the snapshot addon records them from its next login.</p>
+			{:else}
+				<div class="stats">
+					<div class="bars">
+						<div class="bar hp"><span>Health</span><b>{st.health ?? '?'}</b></div>
+						<div class="bar" style:--pc={powerColor(st.powerType)}><span>{(st.powerType ?? 'Power').toLowerCase()}</span><b>{st.power ?? '?'}</b></div>
+					</div>
+					<dl class="attrs">
+						{#each [['Strength', st.str], ['Agility', st.agi], ['Stamina', st.sta], ['Intellect', st.int], ['Spirit', st.spi], ['Armor', st.armor]] as [label, value] (label)}
+							<dt>{label}</dt><dd>{value ?? '?'}</dd>
+						{/each}
+					</dl>
+					<small>{when(snap.statsAt)} · with gear and buffs, as the character sheet shows them</small>
+				</div>
+			{/if}
 		{:else if sheet.view === 'gear'}
 			<div class="doll">
 				<div class="col">
@@ -157,6 +176,15 @@
 	.lm { color: var(--textMuted); white-space: nowrap; }
 
 	h3 { font-size: 14px; margin-bottom: 10px; }
+	.stats { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
+	.bars { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.bar { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--pc, #3a8cff) 22%, var(--well)); border: 1px solid color-mix(in srgb, var(--pc, #3a8cff) 55%, transparent); text-transform: capitalize; }
+	.bar.hp { --pc: #ff4d4d; }
+	.bar b { font-variant-numeric: tabular-nums; }
+	.attrs { display: grid; grid-template-columns: repeat(3, auto 1fr); gap: 8px 12px; margin: 0; padding: 12px; border-radius: 10px; background: var(--well); }
+	.attrs dt { color: var(--textMuted); }
+	.attrs dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+	.stats small { color: var(--textMuted); font-size: 11px; }
 	h3 small, .bagname small { color: var(--textMuted); font-weight: 500; margin-left: 6px; }
 	h3.bank { margin-top: 16px; }
 	.bag { margin-bottom: 12px; }

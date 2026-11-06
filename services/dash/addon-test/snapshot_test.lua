@@ -31,6 +31,12 @@ function GetServerTime() return clock end
 function UnitName() return world.name end
 function GetRealmName() return world.realm end
 function GetMoney() return world.money end
+function UnitHealthMax() return 152 end
+function UnitPowerMax() return 300 end
+function UnitPowerType() return 0, "MANA" end
+local STATS = { 20, 22, 21, 30, 28 }
+function UnitStat(_, i) return STATS[i], STATS[i] + 1 end
+function UnitArmor() return 40, 45 end
 function GetInventoryItemLink(_, slot) return world.equip[slot] end
 function GetInventoryItemID(_, slot) return world.bagItems[slot] end
 NUM_BAG_SLOTS, NUM_BANKBAGSLOTS = 4, 6
@@ -47,6 +53,7 @@ C_Timer = { After = function(s, fn) timers[#timers + 1] = { at = clock + s, fn =
 function CreateFrame()
 	local f = { events = {} }
 	function f:RegisterEvent(e) self.events[e] = true end
+	function f:RegisterUnitEvent(e) self.events[e] = true end
 	function f:SetScript(_, fn) self.handler = fn end
 	frames[#frames + 1] = f
 	return f
@@ -100,6 +107,24 @@ test("nothing is read before the world, and the login read waits five seconds", 
 	eq(d.bags[2], nil, "an empty bag slot")
 	eq(d.bank, nil, "no bank before it was opened")
 	eq(d.equipAt, d.bagsAt, "read together")
+	eq(d.stats.health, 152, "max health")
+	eq(d.stats.power, 300, "max power")
+	eq(d.stats.powerType, "MANA", "power type")
+	eq(d.stats.int, 31, "intellect with gear and buffs")
+	eq(d.stats.armor, 45, "armor")
+end)
+
+test("attributes are read again on a level up, not on bag changes", function()
+	load()
+	fire("PLAYER_ENTERING_WORLD"); advance(6); advance(1)
+	local d = PolestarDashSnapshotDB
+	local at = d.statsAt
+	advance(10)
+	fire("BAG_UPDATE_DELAYED"); advance(1)
+	eq(d.statsAt, at, "bags alone leave the attributes")
+	STATS[1] = 25
+	fire("PLAYER_LEVEL_UP"); advance(1)
+	eq(d.stats.str, 26, "strength after the level")
 end)
 
 test("changes are coalesced and only the changed part is read again", function()

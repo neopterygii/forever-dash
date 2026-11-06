@@ -30,3 +30,18 @@ export function gold(copper: number | null | undefined): string {
 export const QUALITY = ['#9d9d9d', '#ffffff', '#1eff00', '#2f8cff', '#a335ee', '#ff8000', '#e6cc80', '#00ccff'];
 export const qualityColor = (q: number | null | undefined) => QUALITY[q ?? 1] ?? QUALITY[1];
 export const itemIconUrl = (id: number) => `/art/icons/item/${id}.png`;
+
+/** The game's class colours (RAID_CLASS_COLORS). */
+const CLASS_COLOR: Record<string, string> = {
+	WARRIOR: '#c69b6d', PALADIN: '#f48cba', HUNTER: '#aad372', ROGUE: '#fff468', PRIEST: '#ffffff', SHAMAN: '#0070dd',
+	MAGE: '#3fc7eb', WARLOCK: '#8788ee', DRUID: '#ff7c0a',
+};
+export const classColor = (cls: string | null) => (cls && CLASS_COLOR[cls]) || 'var(--text)';
+/** The game's power bar colours. */
+const POWER_COLOR: Record<string, string> = { MANA: '#3a8cff', RAGE: '#ff4d4d', ENERGY: '#ffe34d', FOCUS: '#ff9a4d' };
+export const powerColor = (t: string | undefined) => (t && POWER_COLOR[t]) || '#3a8cff';
+/** Copper as gold, silver and copper parts (for coloured display). */
+export function coins(copper: number | null | undefined): { g: number; s: number; c: number } | null {
+	if (copper == null) return null;
+	return { g: Math.floor(copper / 10000), s: Math.floor((copper % 10000) / 100), c: copper % 100 };
+}

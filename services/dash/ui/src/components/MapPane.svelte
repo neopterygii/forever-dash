@@ -84,6 +84,7 @@
 		const level = (id: string) => dash.chars.find((c) => c.id === id)?.level ?? null;
 		if (dash.mode === 'overview' && dash.overview) {
 			for (const c of dash.overview.characters) {
+				if (dash.hidden.includes(c.char)) continue;
 				addLines(c.char, c.trails);
 				for (const e of c.events) addEvent(e, c.char, false);
 				const p = posAt(c.trails, t);
@@ -92,7 +93,7 @@
 		} else if (dash.mode === 'focus' && dash.focus) {
 			const f = dash.focus;
 			for (const c of dash.overview?.characters ?? []) {
-				if (c.char === f.id) continue;
+				if (c.char === f.id || dash.hidden.includes(c.char)) continue;
 				const p = posAt(c.trails, t);
 				if (p) pins.push({ id: c.char, c: p.c, wx: p.wx, wy: p.wy, name: dash.name(c.char), level: level(c.char), color: dash.colorOf(c.char), online: false });
 			}
@@ -178,7 +179,7 @@
 	});
 
 	const live = $derived(!!dash.timeline && dash.t >= dash.timeline.end - 1);
-	const legendIds = $derived(dash.mode === 'focus' && dash.focus ? [dash.focus.id] : (dash.overview?.characters.map((c) => c.char) ?? []));
+	const legendIds = $derived(dash.mode === 'focus' && dash.focus ? [dash.focus.id] : (dash.overview?.characters.map((c) => c.char).filter((id) => !dash.hidden.includes(id)) ?? []));
 	const offline = $derived(dash.mode === 'focus' && !!dash.focus && !inSessions(dash.focus.sessions, dash.t));
 	const sliderValue = $derived(dash.timeline ? Math.round(dash.timeline.toU(dash.t) * 1000) : 1000);
 	const ticks = $derived(dash.timeline?.ticks() ?? []);

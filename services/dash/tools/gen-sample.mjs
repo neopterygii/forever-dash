@@ -84,11 +84,13 @@ CHARS[0].kit = {
 	bags: { 0: [16, { 1: '6948:1', 2: '159:5', 3: '117:4', 5: '2589:12', 6: '4865:3' }], 1: [6, { 1: '2770:8' }, 4496] },
 	bank: { '-1': [24, { 1: '2589:20', 4: '2770:14' }] },
 	money: 1234,
+	stats: { health: 1820, power: 100, powerType: 'RAGE', str: 112, agi: 64, sta: 98, int: 30, spi: 41, armor: 1450 },
 };
 CHARS[2].kit = {
 	equip: { 5: 250489, 7: 281267, 16: 9513 },
 	bags: { 0: [16, { 1: '6948:1', 2: '159:10' }] },
 	money: 87,
+	stats: { health: 1360, power: 1540, powerType: 'MANA', str: 58, agi: 52, sta: 70, int: 96, spi: 101, armor: 610 },
 };
 function snapshotOf(ch) {
 	const at = (firstDay + days) * 86400 - 3600;
@@ -96,6 +98,7 @@ function snapshotOf(ch) {
 	const d = { schema: 1, name: ch.name, realm: ch.realm, money: ch.kit.money, moneyAt: at, bags: bags(ch.kit.bags), bagsAt: at, equipAt: at, equip: {} };
 	for (const [slot, id] of Object.entries(ch.kit.equip)) d.equip[slot] = `item:${id}:0:0:0:0:0:0:0:${ch.level}:::::`;
 	if (ch.kit.bank) Object.assign(d, { bank: bags(ch.kit.bank), bankAt: at - 7200 });
+	if (ch.kit.stats) Object.assign(d, { stats: ch.kit.stats, statsAt: at });
 	return d;
 }
 // A JS value as a Lua literal (SavedVariables style; numeric keys stay numeric).
