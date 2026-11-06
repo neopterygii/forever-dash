@@ -347,8 +347,11 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	};
 	let long = duration(f.minutes);
 	// Opening: where and how long.
-	if first_place.is_empty() {
-		out.push(format!("I was out for {long} {when}."));
+	if first_place.is_empty() || f.zones.len() == 1 && f.zones[0] == first_place {
+		match f.zones.first() {
+			Some(z) => out.push(format!("I spent {long} in {z} {when}.")),
+			None => out.push(format!("I was out for {long} {when}.")),
+		}
 	} else if f.zones.len() > 1 {
 		out.push(format!("I set out from {first_place} {when} and spent {long} on the road through {}.", list(&f.zones)));
 	} else {
@@ -657,6 +660,14 @@ mod tests {
 		assert_eq!(t.matches("Tirisfal Glades").count(), 1, "{t}");
 		// The same session always reads the same.
 		assert_eq!(t, template(&meera(), 7));
+	}
+
+	#[test]
+	fn a_start_in_the_zone_itself_is_not_repeated() {
+		let f = Facts { minutes: 2, time_of_day: "morning".into(), zones: vec!["Mulgore".into()], first_place: "Mulgore".into(), last_place: "Mulgore".into(), ..Default::default() };
+		let t = template(&f, 1);
+		assert!(t.starts_with("I spent a few minutes in Mulgore this morning."), "{t}");
+		assert_eq!(t.matches("Mulgore").count(), 1, "{t}");
 	}
 
 	#[test]
