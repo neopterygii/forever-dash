@@ -10,7 +10,7 @@ pub use forever_dash_proto::{DashUpload, Who};
 
 /// The time a snapshot was last written: its newest `*At`.
 fn snapshot_saved(v: &serde_json::Value) -> Option<f64> {
-	["equipAt", "bagsAt", "bankAt", "moneyAt"].iter().filter_map(|k| v.get(*k).and_then(serde_json::Value::as_f64)).reduce(f64::max)
+	["equipAt", "bagsAt", "bankAt", "moneyAt", "statsAt"].iter().filter_map(|k| v.get(*k).and_then(serde_json::Value::as_f64)).reduce(f64::max)
 }
 
 /// Record kinds the journal shows (the rest stay in the raw chunk).
@@ -135,7 +135,7 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 	for (char_id, snap) in &req.snapshots {
 		let Some(saved) = snapshot_saved(snap).filter(|_| valid_char_id(char_id)) else { continue };
 		tx.execute("INSERT OR IGNORE INTO characters (char_id) VALUES (?1)", [char_id]).map_err(|e| e.to_string())?;
-		tx.execute("INSERT OR IGNORE INTO snapshots (char_id, saved, json) VALUES (?1, ?2, ?3)", params![char_id, saved, snap.to_string()]).map_err(|e| e.to_string())?;
+		tx.execute("INSERT OR REPLACE INTO snapshots (char_id, saved, json) VALUES (?1, ?2, ?3)", params![char_id, saved, snap.to_string()]).map_err(|e| e.to_string())?;
 	}
 	for (char_id, alt) in &req.alts {
 		let seen = alt.get("seen").and_then(serde_json::Value::as_f64).unwrap_or(0.0);

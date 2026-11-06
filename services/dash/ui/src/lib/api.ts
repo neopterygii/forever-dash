@@ -31,6 +31,8 @@ export interface Character {
 	guide: { title: string; id: string; step: number; count: number } | null;
 	/** When the latest Polestar_DashSnapshot save was written, if any. */
 	snapshotAt: number | null;
+	/** From that save: maximum health and power, the attributes. */
+	vitals: Stats5 | null;
 	chunks: number;
 	first: number | null;
 	last: number | null;
@@ -107,6 +109,19 @@ export interface Container {
 	slots: Item[];
 }
 
+export interface Stats5 {
+	health?: number;
+	power?: number;
+	/** MANA, RAGE, ENERGY... */
+	powerType?: string;
+	str?: number;
+	agi?: number;
+	sta?: number;
+	int?: number;
+	spi?: number;
+	armor?: number;
+}
+
 export interface Snapshot {
 	saved: number;
 	name: string | null;
@@ -116,6 +131,8 @@ export interface Snapshot {
 	bagsAt: number | null;
 	bankAt: number | null;
 	equip: Item[];
+	stats: Stats5 | null;
+	statsAt: number | null;
 	bags: Container[] | null;
 	bank: Container[] | null;
 }

@@ -8,6 +8,8 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+/// A return to the previous place within this many seconds is a border flip, not a journey.
+const BORDER_FLIP: f64 = 120.0;
 /// A gap without records longer than this splits play into sessions.
 pub const SESSION_GAP: f64 = 30.0 * 60.0;
 /// A gap between positions longer than this breaks the trail line (a loading screen, a
@@ -58,7 +60,8 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 		        (SELECT MAX(last_t) FROM chunks k WHERE k.char_id = c.char_id),
 		        c.surname, c.sex, c.xp, c.xp_max, c.rested,
 		        c.realm_name, c.money, c.bind, c.guide,
-		        (SELECT MAX(saved) FROM snapshots s WHERE s.char_id = c.char_id)
+		        (SELECT MAX(saved) FROM snapshots s WHERE s.char_id = c.char_id),
+		        (SELECT json FROM snapshots s WHERE s.char_id = c.char_id ORDER BY saved DESC LIMIT 1)
 		 FROM characters c ORDER BY 10 DESC",
 	)?;
 	let mut out = Vec::new();
@@ -72,6 +75,7 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 			"realmName": r.get::<_, Option<String>>(15)?, "money": r.get::<_, Option<i64>>(16)?, "bind": r.get::<_, Option<String>>(17)?,
 			"guide": r.get::<_, Option<String>>(18)?.and_then(|g| serde_json::from_str::<Value>(&g).ok()),
 			"snapshotAt": r.get::<_, Option<f64>>(19)?,
+			"vitals": r.get::<_, Option<String>>(20)?.and_then(|j| serde_json::from_str::<Value>(&j).ok()).and_then(|v| v.get("stats").cloned()),
 		}))
 	})?;
 	for row in rows {
@@ -312,17 +316,32 @@ pub fn journal(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
 		let mut levels: Vec<i64> = Vec::new();
 		let mut zones: Vec<String> = Vec::new();
 		let mut last_place = String::new();
+		// The place before the last one, and when and where (in `events`) the last change was written.
+		let mut before_place = String::new();
+		let mut last_change: Option<(f64, usize)> = None;
 		for row in rows {
 			let (t, kind, map, x, y, fields) = row?;
 			let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
 			// Zone lines: none while the client has no zone text (loading screens), and only when the
-			// place changes (the Recorder also writes one when the map or the text flickers).
+			// place changes (the Recorder also writes one when the map or the text flickers). Standing
+			// on a border flips A -> B -> A: a return within BORDER_FLIP seconds takes the detour's
+			// line back instead of writing another.
 			if kind == "zone" {
 				let place = format!("{}\t{}", f.get(3).map_or("", String::as_str), f.get(4).map_or("", String::as_str));
 				if f.get(3).is_none_or(|z| z.is_empty()) || place == last_place {
 					continue;
 				}
-				last_place = place;
+				if let Some((at, idx)) = last_change.filter(|(at, _)| place == before_place && t - at <= BORDER_FLIP) {
+					let _ = at;
+					if idx + 1 == events.len() {
+						events.pop();
+					}
+					std::mem::swap(&mut last_place, &mut before_place);
+					last_change = None;
+					continue;
+				}
+				before_place = std::mem::replace(&mut last_place, place);
+				last_change = Some((t, events.len()));
 			}
 			match kind.as_str() {
 				"kill" => {
@@ -449,6 +468,7 @@ pub fn snapshot(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
 	equip.sort_by_key(|(s, _)| *s);
 	Ok(json!({
 		"saved": saved, "name": v.get("name"), "realm": v.get("realm"), "money": v.get("money"),
+		"stats": v.get("stats"), "statsAt": v.get("statsAt"),
 		"equipAt": v.get("equipAt"), "bagsAt": v.get("bagsAt"), "bankAt": v.get("bankAt"),
 		"equip": equip.into_iter().map(|(_, i)| i).collect::<Vec<_>>(),
 		"bags": containers(db, v.get("bags")),
