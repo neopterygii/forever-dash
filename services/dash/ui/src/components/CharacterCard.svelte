@@ -3,14 +3,17 @@
 	// power, XP; picks the focus; opens gear, bags and stats; star (listed first) and hide (off the map).
 	import type { Character } from '../lib/api';
 	import { dash } from '../lib/dash.svelte';
-	import { ago, className, classColor, classIconUrl, coins, fullName, portraitUrl, powerColor, raceName, realmName } from '../lib/format';
+	import { ago, className, classColor, classIconUrl, coins, fullName, portraitUrl, powerColor, raceName, realmName, restedNow } from '../lib/format';
 
 	let { c, selected, color, onpick, onopen }: { c: Character; selected: boolean; color: string; onpick: () => void; onopen: (view: 'gear' | 'bags' | 'stats') => void } = $props();
 
 	const portrait = $derived(portraitUrl(c.race, c.sex));
 	const classIcon = $derived(classIconUrl(c.class));
 	const xpPct = $derived(c.xp != null && c.xpMax ? Math.min(100, (100 * c.xp) / c.xpMax) : null);
-	const restedPct = $derived(xpPct != null && c.rested && c.xpMax ? Math.min(100 - xpPct, (100 * c.rested) / c.xpMax) : 0);
+	const rest = $derived(restedNow(c));
+	const restedPct = $derived(xpPct != null && rest?.rested && c.xpMax ? Math.min(100 - xpPct, (100 * rest.rested) / c.xpMax) : 0);
+	/** Rested as a share of a level, like the game's tooltip ("150%" at the cap). */
+	const restedLabel = $derived(rest?.rested && c.xpMax ? `${Math.round((100 * rest.rested) / c.xpMax)}% rested` : '');
 	const where = $derived(c.lastPos?.zone ? [c.lastPos.subzone, c.lastPos.zone].filter(Boolean).join(' · ') : '');
 	const realm = $derived(realmName(c.realmName ?? c.realm));
 	const money = $derived(coins(c.money));
@@ -30,14 +33,9 @@
 			{#if classIcon && classOk}<img class="cls" src={classIcon} alt="" onerror={() => (classOk = false)} />{/if}
 		</span>
 		<span class="text">
-			<span class="row1">
-				<span class="n"><b class="dot" style:background={color}></b>{fullName(c)}</span>
-				<span class="lvl">Level {c.level ?? '?'} <b style:color={classColor(c.class)}>{className(c.class)}</b></span>
-			</span>
-			<span class="row2">
-				<span class="where">{where || realm}</span>
-				<span class="race">{raceName(c.race)}</span>
-			</span>
+			<span class="n"><b class="dot" style:background={color}></b>{fullName(c)}</span>
+			<span class="lvl">Level {c.level ?? '?'} <b style:color={classColor(c.class)}>{className(c.class)}</b> · {raceName(c.race)}</span>
+			<span class="where">{where || realm}</span>
 			<span class="seen"><b class="status" class:live={recent}></b>{c.last ? `Last seen ${ago(c.last)}` : 'Not seen yet'}</span>
 			<span class="vitals">
 				{#if money}
@@ -49,8 +47,12 @@
 				{#if v?.power}<span class="pw" style:color={powerColor(v.powerType)} title="Maximum {(v.powerType ?? 'power').toLowerCase()}">◆ {v.power}</span>{/if}
 			</span>
 			{#if xpPct != null}
-				<span class="xp" title="{c.xp} / {c.xpMax} XP{c.rested ? ` · ${c.rested} rested` : ''}">
+				<span class="xp" title="{c.xp} / {c.xpMax} XP{rest?.rested ? ` · ${rest.rested} rested${rest.estimated ? ' (estimated since logout)' : ''}` : ''}">
 					<span class="fill" style:width="{xpPct}%"></span><span class="rest" style:left="{xpPct}%" style:width="{restedPct}%"></span>
+				</span>
+				<span class="xpline">
+					<span>{Math.floor(xpPct)}% XP</span>
+					{#if restedLabel}<span class="rl">{restedLabel}{rest?.estimated ? ' ≈' : ''}</span>{/if}
 				</span>
 			{/if}
 		</span>
@@ -77,13 +79,11 @@
 	.card.on .portrait > img:first-child { box-shadow: 0 0 0 2px var(--accent); }
 	.cls { position: absolute; right: -4px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 0 2px var(--sidebar); }
 	.text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-	.row1, .row2 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-width: 0; }
 	.n { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
-	.lvl { font-size: 11px; color: var(--textDim); white-space: nowrap; }
+	.lvl { font-size: 12px; color: var(--textDim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.lvl b { font-weight: 700; }
 	.where { color: var(--textDim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-	.race { color: var(--textMuted); font-size: 11px; white-space: nowrap; }
 	.seen { color: var(--textMuted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
 	.status { width: 7px; height: 7px; border-radius: 50%; background: var(--textMuted); }
 	.status.live { background: var(--success); box-shadow: 0 0 6px var(--success); }
@@ -93,9 +93,11 @@
 	.s { color: #c7c7cf; }
 	.c { color: #d7894a; }
 	.hp { color: #ff6b6b; }
-	.xp { position: relative; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin: 4px 0 2px; background-image: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), color-mix(in srgb, var(--sidebar) 80%, transparent) calc(10% - 1px) 10%); }
+	.xp { position: relative; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; margin: 4px 0 2px; background-image: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), color-mix(in srgb, var(--sidebar) 80%, transparent) calc(10% - 1px) 10%); }
 	.fill { position: absolute; left: 0; top: 0; bottom: 0; background: #a385ff; }
 	.rest { position: absolute; top: 0; bottom: 0; background: #3a8cff; opacity: 0.55; }
+	.xpline { display: flex; justify-content: space-between; font-size: 10px; color: var(--textMuted); font-variant-numeric: tabular-nums; }
+	.rl { color: #6aa8ff; }
 	.actions { display: flex; gap: 5px; align-items: center; padding: 2px 10px 10px 64px; }
 	.actions button { background: var(--chip); border: 0; border-radius: 6px; padding: 3px 9px; font-size: 11px; color: var(--textDim); }
 	.actions button:disabled { opacity: 0.45; cursor: default; }

@@ -37,7 +37,7 @@
 
 <style>
 	:global(#app) { height: 100%; }
-	.app { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; }
+	.app { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100%; }
 	main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 	.body { position: relative; min-height: 0; }
 	.tabs { display: flex; gap: 4px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }

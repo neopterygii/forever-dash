@@ -145,7 +145,8 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 		// The active guide tab: { title, id, step, count }.
 		let guide = alt.get("active").and_then(|a| a.as_u64()).and_then(|i| alt.get("tabs").and_then(|t| t.get(i.to_string()))).cloned();
 		tx.execute(
-			"UPDATE characters SET realm_name = ?2, money = ?3, bind = ?4, profs = ?5, guide = ?6, alt_seen = ?7
+			"UPDATE characters SET realm_name = ?2, money = ?3, bind = ?4, profs = ?5, guide = ?6, alt_seen = ?7,
+			   alt_rested = ?8, alt_resting = ?9, alt_xp = ?10, alt_xp_max = ?11
 			 WHERE char_id = ?1 AND (alt_seen IS NULL OR alt_seen <= ?7)",
 			params![
 				char_id,
@@ -154,7 +155,12 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 				alt.get("bind").and_then(|v| v.as_str()),
 				alt.get("profs").map(|v| v.to_string()),
 				guide.map(|v| v.to_string()),
-				seen
+				seen,
+				// Polestar's entry: rested XP at logout (absent when none) and whether in an inn or city.
+				alt.get("rested").and_then(serde_json::Value::as_i64).unwrap_or(0),
+				alt.get("resting").and_then(serde_json::Value::as_bool).map(i64::from),
+				alt.get("xp").and_then(serde_json::Value::as_i64),
+				alt.get("xpMax").and_then(serde_json::Value::as_i64)
 			],
 		)
 		.map_err(|e| e.to_string())?;

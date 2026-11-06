@@ -99,6 +99,10 @@ const ADDED: &[(&str, &str, &str)] = &[
 	("characters", "profs", "TEXT"),
 	("characters", "guide", "TEXT"),
 	("characters", "alt_seen", "REAL"),
+	("characters", "alt_rested", "INTEGER"),
+	("characters", "alt_resting", "INTEGER"),
+	("characters", "alt_xp", "INTEGER"),
+	("characters", "alt_xp_max", "INTEGER"),
 ];
 
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
