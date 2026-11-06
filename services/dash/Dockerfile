@@ -28,5 +28,6 @@ COPY --from=ui /src/services/dash/ui/dist /app/web
 COPY addon/Polestar/Media/Fonts /app/fonts
 VOLUME /data
 EXPOSE 8790
-# /data: dash.db, art/ (forever-dash art build), tokens (one device token per line; absent = open uploads)
-CMD ["sh", "-c", "exec forever-dash serve --db /data/dash.db --addr 0.0.0.0:8790 --web /app/web --fonts /app/fonts --art /data/art $( [ -f /data/tokens ] && echo --tokens /data/tokens )"]
+# /data: dash.db, art/ (forever-dash art build), spoken/ (Spoken's quest narration, fetched and kept
+# current by the server), tokens (one device token per line; absent = open uploads)
+CMD ["sh", "-c", "exec forever-dash serve --db /data/dash.db --addr 0.0.0.0:8790 --web /app/web --fonts /app/fonts --art /data/art --spoken /data/spoken $( [ -f /data/tokens ] && echo --tokens /data/tokens )"]

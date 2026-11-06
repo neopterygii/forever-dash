@@ -19,6 +19,7 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
 ./target/release/forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 ./target/release/forever-dash dump --wtf <WTF dir>           # what the parser makes of it
 ./target/release/forever-dash reparse --db dash.db           # rebuild derived tables from the raw chunks
+./target/release/forever-dash spoken sync --dir spoken --db dash.db   # newest Spoken quest narration
 ```
 
 - `POST /v1/upload`: upstream ingest's body and answer (accepted / duplicate / rejected per
@@ -28,7 +29,10 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
 - Reads: `GET /api/characters`; `/api/overview?hours=6&tol=8` (the live map: every character's
   last N hours of *playtime*, coarse); `/api/sessions?char=`; `/api/trail?char=&from=&to=&tol=`
   (Douglas-Peucker, split at gaps, teleports and ghost runs); `/api/events?char=&from=&to=&kinds=`;
-  `/api/journal?char=` (sessions split at 30 min gaps); `POST /api/notes`; `GET /api/stats`.
+  `/api/journal?char=&before=&limit=10` (sessions split at 30 min gaps, newest first, a page at a
+  time: `{ sessions, more }`, `before` = the oldest start shown); `/api/quest?char=&id=` (the quest
+  card: Polestar's facts from `names`, the text the character read, giver, rewards, time taken);
+  `POST /api/notes`; `GET /api/stats`.
   Everything is kept; only the map is limited to a playtime buffer.
 - Map: overview of all characters (default 6 h of play each), or one character in focus (default
   its last session, up to all play), scrubbed over playtime (offline gaps skipped).
@@ -39,3 +43,11 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   layout rules use global class names). Without `--art` MapView draws its grid; with
   `planner art` output it draws terrain and zone art.
 - Raw chunks are kept, so derived tables can be rebuilt after a Recorder schema change.
+- **Quest narration** (`serve --spoken <dir>`, `src/spoken.rs`): the journal's accept and turn-in
+  lines play the voice-over the Spoken addons play in game (rusty-key/spoken-wow). The server
+  follows its `quests-audio/v*` releases (at start, then daily): it downloads
+  `SpokenQuestsAudioAll-<v>.zip`, keeps the quest lines and lookup tables (~1.1 GB), imports the
+  tables and serves `/spoken/...` from `<dir>/<current>`. Files are resolved as Spoken_Quests does
+  (giver's own voice, player's sex) minus what needs a live unit. Spoken's MIT licence covers its
+  code, not the generated audio (ElevenLabs/fish.audio from Blizzard's text): data volume only,
+  never committed or put in the image. Ogg Vorbis: no play buttons where the browser can't play it.

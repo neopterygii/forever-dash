@@ -103,12 +103,16 @@ const ADDED: &[(&str, &str, &str)] = &[
 	("characters", "alt_resting", "INTEGER"),
 	("characters", "alt_xp", "INTEGER"),
 	("characters", "alt_xp_max", "INTEGER"),
+	// The quest's text as the character saw it (the `text` record).
+	("quests", "objectives", "TEXT"),
+	("quests", "details", "TEXT"),
 ];
 
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
 	let db = Connection::open(path)?;
 	db.execute_batch(SCHEMA)?;
 	db.execute_batch(crate::names::SCHEMA)?;
+	db.execute_batch(crate::spoken::SCHEMA)?;
 	for (table, column, ty) in ADDED {
 		let has: bool = db.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
 		if !has {

@@ -5,7 +5,7 @@
 //
 //   node services/dash/tools/export-icons.cjs <art dir> [--items-from <server url>]
 //
-// --items-from also renders icons/item/<id>.png for every item the server's snapshots hold
+// --items-from also renders icons/item/<id>.png for every item the server's snapshots and quest rewards hold
 // (GET /api/item-ids); run it again after new snapshots arrive (present icons are kept).
 const fs = require('node:fs');
 const path = require('node:path');

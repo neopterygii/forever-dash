@@ -20,6 +20,21 @@ CREATE TABLE IF NOT EXISTS items (
 	inv_type INTEGER,
 	icon INTEGER
 );
+-- Polestar's reference facts per quest (data/forever/quests.json).
+CREATE TABLE IF NOT EXISTS quest_ref (
+	id INTEGER PRIMARY KEY,
+	level INTEGER,
+	min_level INTEGER,
+	zone INTEGER,
+	objective_text TEXT,
+	xp INTEGER,
+	start_npc INTEGER,
+	start_object INTEGER,
+	start_item INTEGER,
+	end_npc INTEGER,
+	end_object INTEGER,
+	next INTEGER
+);
 ";
 
 /// A name by kind (`npc`, `quest`, `object`, `area`, `spell`, `map`) and id.
@@ -55,11 +70,36 @@ fn csv_rows(path: &Path, cols: &[&str]) -> Result<Vec<HashMap<String, String>>, 
 	Ok(out)
 }
 
+/// Polestar's per-quest facts: level, zone, objectives, who starts and ends it.
+fn quest_refs(tx: &Connection, path: &Path) -> Result<usize, String> {
+	let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+	let v: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+	let obj = v.as_object().ok_or_else(|| format!("{}: not an object", path.display()))?;
+	let mut st = tx
+		.prepare_cached("INSERT OR REPLACE INTO quest_ref (id, level, min_level, zone, objective_text, xp, start_npc, start_object, start_item, end_npc, end_object, next) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)")
+		.map_err(|e| e.to_string())?;
+	let first = |q: &Value, side: &str, kind: &str| q.get(side).and_then(|s| s.get(kind)).and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_i64);
+	let mut n = 0;
+	for (k, q) in obj {
+		let Ok(id) = k.parse::<i64>() else { continue };
+		let i = |f: &str| q.get(f).and_then(Value::as_i64);
+		let text = q.get("objectiveText").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
+		n += st
+			.execute(params![
+				id, i("level"), i("minLevel"), i("zone"), text, i("xp"),
+				first(q, "start", "npc"), first(q, "start", "object"), first(q, "start", "item"),
+				first(q, "end", "npc"), first(q, "end", "object"), i("next"),
+			])
+			.map_err(|e| e.to_string())?;
+	}
+	Ok(n)
+}
+
 /// Imports every name; returns counts per kind.
 pub fn import(db: &mut Connection, data: &Path, tables: &Path) -> Result<Vec<(String, usize)>, String> {
 	db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
 	let tx = db.transaction().map_err(|e| e.to_string())?;
-	tx.execute_batch("DELETE FROM names; DELETE FROM items;").map_err(|e| e.to_string())?;
+	tx.execute_batch("DELETE FROM names; DELETE FROM items; DELETE FROM quest_ref;").map_err(|e| e.to_string())?;
 	let mut counts = Vec::new();
 	let mut put = |kind: &str, rows: Vec<(i64, String)>| -> Result<(), String> {
 		let mut st = tx.prepare_cached("INSERT OR REPLACE INTO names (kind, id, name) VALUES (?1, ?2, ?3)").map_err(|e| e.to_string())?;
@@ -78,6 +118,10 @@ pub fn import(db: &mut Connection, data: &Path, tables: &Path) -> Result<Vec<(St
 	put("area", col(csv_rows(&tables.join("AreaTable.csv"), &["ID", "AreaName_lang"])?, "AreaName_lang"))?;
 	put("spell", col(csv_rows(&tables.join("SpellName.csv"), &["ID", "Name_lang"])?, "Name_lang"))?;
 	put("map", col(csv_rows(&tables.join("Map.csv"), &["ID", "MapName_lang"])?, "MapName_lang"))?;
+	// uiMap ids (a quest's zone, the Recorder's `map`): the zone's name as the world map shows it.
+	put("uimap", col(csv_rows(&tables.join("UiMap.csv"), &["ID", "Name_lang"])?, "Name_lang"))?;
+	drop(put);
+	counts.push(("quest facts".into(), quest_refs(&tx, &data.join("quests.json"))?));
 
 	// Items: names, quality, levels and slot from ItemSparse, the icon from Item; Polestar's names
 	// for items the sparse table lacks.

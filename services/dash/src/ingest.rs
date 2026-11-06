@@ -87,7 +87,10 @@ pub(crate) fn derive(tx: &Connection, chunk: &Chunk) -> rusqlite::Result<()> {
 				store_map(tx, &r.fields.join("\t"))?;
 			}
 			Kind::Text => {
-				tx.execute("INSERT OR REPLACE INTO quests (id, title) VALUES (?1, ?2)", params![r.int("q"), r.get("title")])?;
+				tx.execute(
+					"INSERT OR REPLACE INTO quests (id, title, objectives, details) VALUES (?1, ?2, ?3, ?4)",
+					params![r.int("q"), r.get("title"), r.get("objectiveText"), r.get("detailText")],
+				)?;
 			}
 			_ => {}
 		}

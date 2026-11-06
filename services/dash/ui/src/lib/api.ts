@@ -56,12 +56,54 @@ export interface Trail extends Segment {
 	f32: Float32Array;
 }
 
+export interface Narration {
+	url: string;
+	length: number;
+}
+
 export interface DashEvent {
 	char: string;
 	t: number;
 	kind: string;
 	text: string;
 	pos: Pos | null;
+	/** On accept, turn-in, abandon and fail lines. */
+	quest?: { id: number; level: number | null; audio: Narration | null } | null;
+}
+
+export interface JournalPage {
+	sessions: Session[];
+	/** Older sessions remain (ask with `before` = the oldest one's start). */
+	more: boolean;
+}
+
+export interface QuestNpc {
+	kind: 'npc' | 'object';
+	id: number;
+	name: string;
+}
+
+/** Everything the journal's quest card shows (read.rs `quest`). */
+export interface QuestInfo {
+	id: number;
+	title: string;
+	level: number | null;
+	minLevel: number | null;
+	zone: string | null;
+	objectives: string | null;
+	details: string | null;
+	giver: QuestNpc | null;
+	ender: QuestNpc | null;
+	next: { id: number; title: string } | null;
+	history: { t: number; kind: string }[];
+	accepted: number | null;
+	done: number | null;
+	seconds: number | null;
+	rewards: { xp: number | null; money: number | null; items: Item[]; choices: Item[] } | null;
+	paid: { xp: number | null; money: number | null; chosen: Item | null } | null;
+	refXp: number | null;
+	kills: number;
+	audio: { accept: Narration | null; complete: Narration | null };
 }
 
 export type Span = [number, number];
@@ -166,7 +208,9 @@ export const api = {
 	events: (char: string, from: number, to: number, kinds: string[]) => get<DashEvent[]>(`/api/events?${q({ char, from, to, kinds: kinds.join(',') })}`),
 	/** Every character's events in [from, to] (all journal kinds when `kinds` is empty). */
 	allEvents: (from: number, to: number, kinds: string[] = []) => get<DashEvent[]>(`/api/events?${q({ from, to, kinds: kinds.join(',') })}`),
-	journal: (char: string) => get<Session[]>(`/api/journal?${q({ char })}`),
+	/** A page of the journal, newest first: sessions that started before `before` (default: the newest). */
+	journal: (char: string, before?: number, limit = 10) => get<JournalPage>(`/api/journal?${q({ char, limit, ...(before !== undefined ? { before } : {}) })}`),
+	quest: (char: string, id: number) => get<QuestInfo>(`/api/quest?${q({ char, id })}`),
 	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
 	addNote: async (char: string, t: number, text: string) => {
 		const r = await fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, t, text }) });

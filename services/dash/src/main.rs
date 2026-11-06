@@ -5,6 +5,11 @@
 //!   forever-dash dump   --wtf <WTF dir>
 //!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
 //!   forever-dash names --data <data/forever> --tables <data/sources/wago/<build>> [--db dash.db]
+//!   forever-dash spoken sync --dir <spoken dir> [--db dash.db]     newest Spoken quest narration release
+//!   forever-dash spoken import --dir <unpacked pack folders> [--db dash.db]
+//!
+//! `serve --spoken <dir>` plays Spoken's quest narration in the journal and keeps it up to date
+//! (checks rusty-key/spoken-wow's releases at start and every day).
 //!
 //! `upload` stands in for the Polestar Client fork's `dash` module: it reads every account's
 //! Recorder SavedVariables and the per-character ones (charId -> name/realm) and uploads them.
@@ -13,6 +18,7 @@ mod db;
 mod ingest;
 mod names;
 mod read;
+mod spoken;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -88,8 +94,27 @@ struct CharQ {
 	char: String,
 }
 
-async fn journal(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
-	read::journal(&db.lock().unwrap(), &q.char).map(Json).map_or_else(err500, IntoResponse::into_response)
+#[derive(Deserialize)]
+struct JournalQ {
+	char: String,
+	/// Sessions that started before this time (the oldest one already shown); none = the newest.
+	before: Option<f64>,
+	limit: Option<usize>,
+}
+
+async fn journal(State(db): State<Db>, Query(q): Query<JournalQ>) -> Response {
+	let limit = q.limit.unwrap_or(read::JOURNAL_PAGE).clamp(1, 200);
+	read::journal(&db.lock().unwrap(), &q.char, q.before, limit).map(Json).map_or_else(err500, IntoResponse::into_response)
+}
+
+#[derive(Deserialize)]
+struct QuestQ {
+	char: String,
+	id: i64,
+}
+
+async fn quest(State(db): State<Db>, Query(q): Query<QuestQ>) -> Response {
+	read::quest(&db.lock().unwrap(), &q.char, q.id).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 async fn snapshot(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
@@ -180,11 +205,26 @@ async fn serve(args: &[String]) {
 		println!("uploads need one of {} device tokens", tokens.len());
 	}
 	let _ = TOKENS.set(tokens);
+	// Spoken's narration: served from <dir>/<current version>, followed daily. The static route is
+	// resolved per request so a new version is served without a restart.
+	let spoken_dir = args.iter().position(|a| a == "--spoken").and_then(|i| args.get(i + 1)).map(PathBuf::from);
+	if let Some(dir) = spoken_dir.clone() {
+		let db_path = db_path.clone();
+		std::thread::spawn(move || loop {
+			match spoken::sync(&dir, &db_path) {
+				Ok((v, changed)) => println!("spoken: {v}{}", if changed { " installed" } else { " is current" }),
+				Err(e) => eprintln!("spoken sync: {e}"),
+			}
+			std::thread::sleep(std::time::Duration::from_secs(24 * 3600));
+		});
+	}
 	let app = Router::new()
 		.route("/v1/upload", post(upload))
 		.route("/api/characters", get(characters))
 		.route("/api/trail", get(trail))
 		.route("/api/journal", get(journal))
+		.route("/api/quest", get(quest))
+		.route("/spoken/{*path}", get(move |p: axum::extract::Path<String>, req: axum::extract::Request| spoken_file(spoken_dir.clone(), p, req)))
 		.route("/api/overview", get(overview))
 		.route("/api/sessions", get(sessions))
 		.route("/api/snapshot", get(snapshot))
@@ -202,6 +242,22 @@ async fn serve(args: &[String]) {
 	let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
 	println!("forever-dash listening on http://{addr} (db {db_path})");
 	axum::serve(listener, app).await.unwrap();
+}
+
+/// A file of the Spoken version being served (`/spoken/<Pack>/generated/sounds/quests/<file>.ogg`).
+async fn spoken_file(dir: Option<PathBuf>, axum::extract::Path(path): axum::extract::Path<String>, req: axum::extract::Request) -> Response {
+	use tower::ServiceExt;
+	let Some(dir) = dir else { return StatusCode::NOT_FOUND.into_response() };
+	let Some(v) = spoken::current(&dir) else { return StatusCode::NOT_FOUND.into_response() };
+	if !path.ends_with(".ogg") || path.split('/').any(|p| p == ".." || p.is_empty()) {
+		return StatusCode::NOT_FOUND.into_response();
+	}
+	let mut res = match tower_http::services::ServeFile::new(dir.join(v).join(&path)).oneshot(req).await {
+		Ok(r) => r.into_response(),
+		Err(e) => return err500(e),
+	};
+	res.headers_mut().insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("public, max-age=604800"));
+	res
 }
 
 struct Found {
@@ -349,6 +405,18 @@ async fn main() {
 				.map_err(|e| e.to_string())
 				.and_then(|mut db| names::import(&mut db, &data, &tables))
 				.map(|c| println!("imported names: {}", c.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(", ")))
+		}
+		Some("spoken") => {
+			let dir = PathBuf::from(arg(&args, "--dir", "spoken"));
+			let db_path = arg(&args, "--db", "dash.db");
+			match args.get(2).map(String::as_str) {
+				Some("sync") => tokio::task::spawn_blocking(move || spoken::sync(&dir, &db_path)).await.unwrap().map(|(v, c)| println!("spoken {v}{}", if c { " installed" } else { " already current" })),
+				Some("import") => db::open(&db_path)
+					.map_err(|e| e.to_string())
+					.and_then(|mut db| spoken::import(&mut db, &dir, "local"))
+					.map(|(l, g)| println!("imported {l} quest lines, {g} giver voices")),
+				_ => Err("usage: forever-dash spoken sync|import --dir DIR [--db dash.db]".into()),
+			}
 		}
 		Some("reparse") => {
 			let mut db = db::open(&arg(&args, "--db", "dash.db")).map_err(|e| e.to_string());

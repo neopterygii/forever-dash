@@ -1,14 +1,25 @@
 <script lang="ts">
 	// The focused character's journal, as a panel that drops down over the map: sessions newest
 	// first, their events and notes. Clicking a session or an event replays it on the map behind,
-	// with the panel left open; the session on the map is highlighted.
+	// with the panel left open; the session on the map is highlighted. Sessions come a page at a
+	// time (newest first). A quest line plays Spoken's narration of that moment and opens the
+	// quest's card.
 	import { api, type DashEvent, type Pos, type Session } from '../lib/api';
 	import { dash } from '../lib/dash.svelte';
 	import { day, hhmm } from '../lib/format';
+	import { untrack } from 'svelte';
+	import NarrationButton from './NarrationButton.svelte';
+	import QuestCard from './QuestCard.svelte';
+
+	const PAGE = 10;
 
 	const visible = $derived(dash.journalOpen);
 	let sessions = $state.raw<Session[] | null>(null);
+	let more = $state(false);
+	let loadingOlder = $state(false);
 	let reload = $state(0);
+	/** The quest card open, as `<time>:<quest id>` of its line. */
+	let openQuest = $state<string | null>(null);
 	let drafts = $state<Record<number, string>>({});
 
 	const id = $derived(dash.mode === 'focus' ? dash.focus?.id : undefined);
@@ -49,17 +60,42 @@
 		goTo(e.pos);
 	}
 
+	// The first page, or as many sessions as are shown when only reloading (a note was added).
+	let shownFor: string | undefined;
 	$effect(() => {
 		reload;
 		if (!visible || !id) return;
+		// Read without subscribing: this effect writes `sessions`.
+		const keep = shownFor === id ? Math.max(PAGE, untrack(() => sessions?.length ?? 0)) : PAGE;
+		if (shownFor !== id) {
+			sessions = null;
+			openQuest = null;
+		}
+		shownFor = id;
 		let stale = false;
-		api.journal(id).then((s) => {
-			if (!stale) sessions = s;
+		api.journal(id, undefined, keep).then((p) => {
+			if (stale) return;
+			sessions = p.sessions;
+			more = p.more;
 		});
 		return () => (stale = true);
 	});
 
-	type Item = { t: number; kind: string; text: string; pos?: Pos | null };
+	async function loadOlder() {
+		if (!id || !sessions?.length || loadingOlder) return;
+		loadingOlder = true;
+		try {
+			const p = await api.journal(id, sessions[sessions.length - 1].start, PAGE);
+			sessions = [...sessions, ...p.sessions];
+			more = p.more;
+		} finally {
+			loadingOlder = false;
+		}
+	}
+
+	type Item = { t: number; kind: string; text: string; pos?: Pos | null; quest?: DashEvent['quest'] };
+	const qkey = (e: Item) => `${e.t}:${e.quest?.id}`;
+	const toggleQuest = (e: Item) => (openQuest = openQuest === qkey(e) ? null : qkey(e));
 	const items = (s: Session): Item[] => [...s.events, ...s.notes.map((n) => ({ t: n.t, kind: 'note', text: n.text }))].sort((a, b) => b.t - a.t); // newest first, as the sessions
 	const key = (s: Session) => `s:${s.start}:${s.end}`;
 
@@ -95,10 +131,11 @@
 					<ul class="events">
 						{#each g.items as e, j (j)}
 							<li class="k-{e.kind}">
-								<button onclick={() => seek(e)}>
+								<button class="ev" onclick={() => seek(e)}>
 									<time>{hhmm(e.t)}</time><b class="ji" style:background={dash.colorOf(e.char)}></b>
 									<span><b class="who" style:color={dash.colorOf(e.char)}>{dash.name(e.char)}</b> {e.text}</span>
 								</button>
+								{#if e.quest?.audio}<NarrationButton line={e.quest.audio} />{/if}
 							</li>
 						{/each}
 					</ul>
@@ -123,8 +160,13 @@
 				<ul class="events">
 					{#each items(s) as e, j (j)}
 						<li class="k-{e.kind}">
-							<button onclick={() => dash.run(replay(s, e))}><time>{hhmm(e.t)}</time><b class="ji"></b><span>{e.text}</span></button>
+							<button class="ev" onclick={() => dash.run(replay(s, e))}><time>{hhmm(e.t)}</time><b class="ji"></b><span>{e.text}</span></button>
+							{#if e.quest?.audio}<NarrationButton line={e.quest.audio} />{/if}
+							{#if e.quest}
+								<button class="qt" class:on={openQuest === qkey(e)} aria-expanded={openQuest === qkey(e)} aria-label="Quest details" title="Quest details" onclick={() => toggleQuest(e)}><i></i></button>
+							{/if}
 						</li>
+						{#if e.quest && openQuest === qkey(e) && id}<li class="card"><QuestCard char={id} id={e.quest.id} /></li>{/if}
 					{/each}
 				</ul>
 				<form class="note" onsubmit={(ev) => { ev.preventDefault(); dash.run(addNote(s, i)); }}>
@@ -133,6 +175,11 @@
 				</form>
 			</article>
 		{/each}
+		{#if more}
+			<button class="older" disabled={loadingOlder} onclick={() => dash.run(loadOlder())}>{loadingOlder ? 'Loading…' : 'Show older sessions'}</button>
+		{:else if sessions.length > PAGE}
+			<p class="end">The first session recorded.</p>
+		{/if}
 	{/if}
 </section>
 
@@ -154,9 +201,19 @@
 	.facts span { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--textDim); }
 	.facts b { color: var(--text); font-weight: 700; }
 	.events { list-style: none; margin: 0; padding: 8px 12px; }
-	.events button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 62px 12px 1fr; gap: 6px; align-items: center; padding: 3px 0; cursor: pointer; border-radius: 4px; }
-	.events button:hover { background: var(--hover); }
-	.events button:focus-visible { outline: 1px solid var(--focus); }
+	.events li { display: flex; align-items: center; gap: 4px; }
+	.events li.card { display: block; }
+	.events .ev { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: grid; grid-template-columns: 62px 12px 1fr; gap: 6px; align-items: center; padding: 3px 0; cursor: pointer; border-radius: 4px; }
+	.events .ev:hover { background: var(--hover); }
+	.events .ev:focus-visible { outline: 1px solid var(--focus); }
+	.qt { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; background: none; color: var(--textMuted); cursor: pointer; padding: 0; }
+	.qt:hover, .qt.on { background: var(--chip); color: var(--text); }
+	.qt:focus-visible { outline: 1px solid var(--focus); }
+	.qt i { width: 12px; height: 12px; background: currentColor; mask: url(/glyph/chevron-down.png) center / contain no-repeat; -webkit-mask: url(/glyph/chevron-down.png) center / contain no-repeat; transition: transform 0.12s; }
+	.qt.on i { transform: rotate(180deg); }
+	.older { display: block; width: 100%; margin: 0 0 10px; padding: 8px; border: 1px dashed var(--border); border-radius: 10px; background: none; color: var(--accent); font-weight: 600; cursor: pointer; }
+	.older:disabled { color: var(--textDim); cursor: default; }
+	.end { text-align: center; color: var(--textMuted); font-size: 12px; margin: 4px 0 12px; }
 	.events time { white-space: nowrap; color: var(--textMuted); font-size: 12px; }
 	.ji { width: 8px; height: 8px; border-radius: 50%; background: var(--textMuted); justify-self: center; }
 	.k-death .ji { background: var(--danger); }

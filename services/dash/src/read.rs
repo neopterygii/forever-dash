@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -281,7 +281,11 @@ pub fn events(db: &Connection, char_id: Option<&str>, from: f64, to: f64, kinds:
 		}
 		let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
 		if let Some(text) = describe(db, &kind, &f) {
-			out.push(json!({ "char": ch, "t": t, "kind": kind, "text": text, "pos": world_of(&frames, map, x, y) }));
+			let mut e = json!({ "char": ch, "t": t, "kind": kind, "text": text, "pos": world_of(&frames, map, x, y) });
+			if matches!(kind.as_str(), "accept" | "turnin" | "abandon" | "fail") {
+				e["quest"] = quest_of(db, &kind, &f, char_sex(db, &ch)).unwrap_or(Value::Null);
+			}
+			out.push(e);
 		}
 	}
 	Ok(out)
@@ -307,11 +311,49 @@ pub fn overview(db: &Connection, hours: f64, tol: f64) -> rusqlite::Result<Value
 	Ok(json!({ "hours": hours, "characters": out }))
 }
 
-pub fn journal(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
+/// The character's sex (UnitSex: 2 male, 3 female), for the narration's voice.
+fn char_sex(db: &Connection, char_id: &str) -> Option<i64> {
+	db.query_row("SELECT sex FROM characters WHERE char_id = ?1", [char_id], |r| r.get(0)).ok().flatten()
+}
+
+/// What a quest line of the journal (accept, turn-in, abandon, fail) carries beyond its text:
+/// the quest id, its level and, when a Spoken pack has it, the narration of that moment.
+fn quest_of(db: &Connection, kind: &str, f: &[String], sex: Option<i64>) -> Option<Value> {
+	let q: i64 = f.first()?.parse().ok()?;
+	let level: Option<i64> = db.query_row("SELECT level FROM quest_ref WHERE id = ?1", [q], |r| r.get(0)).ok().flatten();
+	let moment = match kind {
+		"accept" => Some("accept"),
+		"turnin" => Some("complete"),
+		_ => None,
+	};
+	let giver = giver_of(f);
+	let audio = moment.and_then(|m| crate::spoken::resolve(db, q, m, giver, sex)).map(|l| json!({ "url": l.url, "length": l.length }));
+	Some(json!({ "id": q, "level": level, "audio": audio }))
+}
+
+/// The NPC or object of an accept/turn-in record (npcKind, npcId at 1 and 2).
+fn giver_of(f: &[String]) -> Option<(&'static str, i64)> {
+	let kind = match f.get(1).map(String::as_str) {
+		Some("c") => "npc",
+		Some("o") => "object",
+		_ => return None,
+	};
+	Some((kind, f.get(2)?.parse().ok()?))
+}
+
+/// Journal sessions per page (the newest first) unless the caller asks for another number.
+pub const JOURNAL_PAGE: usize = 10;
+
+/// One page of the character's journal: up to `limit` sessions that started before `before`
+/// (all when None), newest first, and whether older ones remain.
+pub fn journal(db: &Connection, char_id: &str, before: Option<f64>, limit: usize) -> rusqlite::Result<Value> {
 	let frames = frames(db)?;
-	let sessions = sessions(db, char_id)?;
+	let sex = char_sex(db, char_id);
+	let all = sessions(db, char_id)?;
+	let older: Vec<(f64, f64)> = all.into_iter().filter(|s| before.is_none_or(|b| s.0 < b)).collect();
+	let more = older.len() > limit;
 	let mut out = Vec::new();
-	for (start, end) in sessions.into_iter().rev() {
+	for (start, end) in older.into_iter().rev().take(limit) {
 		let mut st = db.prepare("SELECT t, kind, map, x, y, fields FROM events WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 		let rows = st.query_map(params![char_id, start, end], |r| {
 			Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?, r.get::<_, String>(5)?))
@@ -364,7 +406,11 @@ pub fn journal(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
 				_ => {}
 			}
 			if let Some(text) = describe(db, &kind, &f) {
-				events.push(json!({ "t": t, "kind": kind, "text": text, "pos": world_of(&frames, map, x, y) }));
+				let mut e = json!({ "t": t, "kind": kind, "text": text, "pos": world_of(&frames, map, x, y) });
+				if matches!(kind.as_str(), "accept" | "turnin" | "abandon" | "fail") {
+					e["quest"] = quest_of(db, &kind, &f, sex).unwrap_or(Value::Null);
+				}
+				events.push(e);
 			}
 		}
 		let mut nst = db.prepare("SELECT id, t, text FROM notes WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
@@ -377,7 +423,153 @@ pub fn journal(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
 		}));
 	}
-	Ok(Value::Array(out))
+	Ok(json!({ "sessions": out, "more": more }))
+}
+
+/// "itemId:count;..." -> item facts with their count.
+fn item_list(db: &Connection, s: &str) -> Vec<Value> {
+	s.split(';')
+		.filter_map(|p| {
+			let (id, count) = id_count(p)?;
+			let mut i = item(db, id);
+			i["count"] = json!(count);
+			Some(i)
+		})
+		.collect()
+}
+
+/// Quest text as the game would show it to this character: `$N` name, `$C` class, `$R` race,
+/// `$B` line break, `$Gmale:female;` by sex.
+fn fill_tokens(text: &str, name: &str, class: &str, race: &str, sex: Option<i64>) -> String {
+	let mut out = String::with_capacity(text.len());
+	let mut rest = text;
+	while let Some(at) = rest.find('$') {
+		out.push_str(&rest[..at]);
+		let tail = &rest[at + 1..];
+		let Some(c) = tail.chars().next() else {
+			out.push('$');
+			rest = tail;
+			break;
+		};
+		match c.to_ascii_uppercase() {
+			'N' => out.push_str(name),
+			'C' => out.push_str(class),
+			'R' => out.push_str(race),
+			'B' => out.push('\n'),
+			'G' => {
+				if let Some(end) = tail.find(';') {
+					let (m, f) = tail[1..end].split_once(':').unwrap_or((&tail[1..end], ""));
+					out.push_str(if sex == Some(3) { f } else { m }.trim());
+					rest = &tail[end + 1..];
+					continue;
+				}
+				out.push('$');
+				out.push(c);
+			}
+			_ => {
+				out.push('$');
+				out.push(c);
+			}
+		}
+		rest = &tail[c.len_utf8()..];
+	}
+	out.push_str(rest);
+	out
+}
+
+/// "WARRIOR" -> "Warrior", "Scourge" -> "Undead", "NightElf" -> "Night Elf".
+fn pretty_token(t: &str) -> String {
+	match t {
+		"Scourge" => return "Undead".into(),
+		"" => return String::new(),
+		_ => {}
+	}
+	let lower = t.to_lowercase();
+	let caps = t.chars().any(|c| c.is_lowercase());
+	let mut out = String::new();
+	for (i, c) in (if caps { t.to_string() } else { lower }).chars().enumerate() {
+		if i == 0 {
+			out.extend(c.to_uppercase());
+		} else if c.is_uppercase() && caps {
+			out.push(' ');
+			out.push(c);
+		} else {
+			out.push(c);
+		}
+	}
+	out
+}
+
+/// Everything about one quest for the journal's quest card: Polestar's facts, the text the
+/// character read, its history (accepted, handed in, abandoned), what it paid, the kills that
+/// counted for it, and the narration of both moments.
+pub fn quest(db: &Connection, char_id: &str, q: i64) -> rusqlite::Result<Value> {
+	let sex = char_sex(db, char_id);
+	let r: Option<(Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)> = db
+		.query_row(
+			"SELECT level, min_level, zone, objective_text, xp, start_npc, start_object, end_npc, next FROM quest_ref WHERE id = ?1",
+			[q],
+			|r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
+		)
+		.optional()?;
+	let (level, min_level, zone, ref_text, ref_xp, start_npc, start_object, end_npc, next) = r.unwrap_or_default();
+	let seen: Option<(Option<String>, Option<String>)> =
+		db.query_row("SELECT objectives, details FROM quests WHERE id = ?1", [q], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+	let (objectives, details) = seen.unwrap_or_default();
+	let who: (Option<String>, Option<String>, Option<String>) =
+		db.query_row("SELECT name, class, race FROM characters WHERE char_id = ?1", [char_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?.unwrap_or_default();
+	let (name, class, race) = (who.0.unwrap_or_default(), pretty_token(&who.1.unwrap_or_default()), pretty_token(&who.2.unwrap_or_default()));
+	let nonempty = |s: Option<String>| s.filter(|t| !t.trim().is_empty()).map(|t| fill_tokens(&t, &name, &class, &race, sex));
+	let mut st = db.prepare(
+		"SELECT t, kind, fields FROM events WHERE char_id = ?1 AND kind IN ('accept', 'turnin', 'abandon', 'fail') AND json_extract(fields, '$[0]') = ?2 ORDER BY t",
+	)?;
+	let rows: Vec<(f64, String, Vec<String>)> = st
+		.query_map(params![char_id, q.to_string()], |r| Ok((r.get(0)?, r.get(1)?, serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or_default())))?
+		.collect::<Result<_, _>>()?;
+	let mut history = Vec::new();
+	let (mut giver, mut ender) = (None, None);
+	let (mut accepted, mut done): (Option<f64>, Option<f64>) = (None, None);
+	let mut rewards = json!(null);
+	let mut paid = json!(null);
+	let name_of = |g: Option<(&str, i64)>| g.map(|(k, id)| json!({ "kind": k, "id": id, "name": named(db, k, &id.to_string()) }));
+	for (t, kind, f) in &rows {
+		let g = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
+		history.push(json!({ "t": t, "kind": kind }));
+		match kind.as_str() {
+			"accept" => {
+				accepted = Some(*t);
+				giver = name_of(giver_of(f));
+				rewards = json!({ "xp": g(7).parse::<i64>().ok(), "money": g(8).parse::<i64>().ok(), "items": item_list(db, g(9)), "choices": item_list(db, g(10)) });
+			}
+			"turnin" => {
+				done = Some(*t);
+				ender = name_of(giver_of(f));
+				paid = json!({ "xp": g(7).parse::<i64>().ok(), "money": g(8).parse::<i64>().ok(), "chosen": g(9).parse::<i64>().ok().map(|id| item(db, id)) });
+			}
+			_ => {}
+		}
+	}
+	// Kills the Recorder tied to one of the quest's objectives (`q` = questId:index, field 9).
+	let kills: i64 = db.query_row(
+		"SELECT COUNT(*) FROM events WHERE char_id = ?1 AND kind = 'kill' AND json_extract(fields, '$[9]') LIKE ?2",
+		params![char_id, format!("{q}:%")],
+		|r| r.get(0),
+	)?;
+	let giver = giver.or_else(|| name_of(start_npc.map(|id| ("npc", id)).or(start_object.map(|id| ("object", id)))));
+	let ender = ender.or_else(|| name_of(end_npc.map(|id| ("npc", id))));
+	let line = |m: &str, who: Option<&Value>| {
+		let g = who.and_then(|w| Some((if w["kind"] == "object" { "object" } else { "npc" }, w["id"].as_i64()?)));
+		crate::spoken::resolve(db, q, m, g, sex).map(|l| json!({ "url": l.url, "length": l.length }))
+	};
+	Ok(json!({
+		"id": q, "title": quest_title(db, &q.to_string()), "level": level, "minLevel": min_level,
+		"zone": zone.and_then(|z| crate::names::name(db, "uimap", &z.to_string())),
+		"objectives": nonempty(objectives).or(nonempty(ref_text)), "details": nonempty(details),
+		"giver": giver, "ender": ender, "next": next.map(|n| json!({ "id": n, "title": quest_title(db, &n.to_string()) })),
+		"history": history, "accepted": accepted, "done": done, "seconds": accepted.zip(done).map(|(a, d)| d - a),
+		"rewards": rewards, "paid": paid, "refXp": ref_xp, "kills": kills,
+		"audio": { "accept": line("accept", giver.as_ref()), "complete": line("complete", ender.as_ref()) },
+	}))
 }
 
 fn distance(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f64, to: f64) -> rusqlite::Result<(f64, usize)> {
@@ -501,5 +693,31 @@ pub fn item_ids(db: &Connection) -> rusqlite::Result<Vec<i64>> {
 			}
 		}
 	}
+	// Quest rewards (accept: items 9, choices 10; turn-in: the chosen item 9), for the quest cards.
+	let mut st = db.prepare("SELECT kind, fields FROM events WHERE kind IN ('accept', 'turnin')")?;
+	for row in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+		let (kind, fields) = row?;
+		let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
+		let lists: &[usize] = if kind == "accept" { &[9, 10] } else { &[9] };
+		for &i in lists {
+			ids.extend(f.get(i).into_iter().flat_map(|s| s.split(';')).filter_map(|p| id_count(p).map(|(id, _)| id)));
+		}
+	}
 	Ok(ids.into_iter().collect())
+}
+
+#[cfg(test)]
+mod quest_text_tests {
+	use super::*;
+
+	#[test]
+	fn tokens_read_as_the_game_shows_them() {
+		let t = "Well met, $N the $r $C.$B$BGo, $gbrother:sister;!";
+		assert_eq!(fill_tokens(t, "Mourning", "Mage", "Undead", Some(2)), "Well met, Mourning the Undead Mage.\n\nGo, brother!");
+		assert_eq!(fill_tokens("$Gbrother:sister;", "x", "", "", Some(3)), "sister");
+		assert_eq!(fill_tokens("cost $5", "x", "", "", None), "cost $5");
+		assert_eq!(pretty_token("WARRIOR"), "Warrior");
+		assert_eq!(pretty_token("NightElf"), "Night Elf");
+		assert_eq!(pretty_token("Scourge"), "Undead");
+	}
 }
