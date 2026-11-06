@@ -35,6 +35,8 @@
 	let done = $state<Record<string, AddonAction>>({});
 
 	const addons = $derived(snapshot.addons);
+	/** Ask twice before updating while the game runs, unless Settings says updates may go ahead (forever-dash). */
+	const guard = $derived(addons.gameRunning && !addons.updateWhileRunning);
 	const updates = $derived(addons.products.filter((p) => p.status === 'update'));
 	/** Community packs with an update the game can take: Update all does them too. */
 	const packUpdates = $derived(snapshot.community.packs.filter((p) => p.status === 'update' && !p.blocked).length);
@@ -155,13 +157,13 @@
 		{#if pending > 0}
 			<button
 				class="btn"
-				class:primary={!addons.gameRunning}
+				class:primary={!guard}
 				class:armed={armed === 'all'}
 				disabled={updatingAll || !addons.gameFound}
-				onclick={() => (addons.gameRunning ? confirm('all', updateAll) : updateAll())}
+				onclick={() => (guard ? confirm('all', updateAll) : updateAll())}
 				in:swap
 			>
-				{#if updatingAll}<span class="spinner"></span>Updating…{:else if armed === 'all'}Click again: the game is running{:else if addons.gameRunning}Update all anyway{:else}Update all ({pending}){/if}
+				{#if updatingAll}<span class="spinner"></span>Updating…{:else if armed === 'all'}Click again: the game is running{:else if guard}Update all anyway{:else}Update all ({pending}){/if}
 			</button>
 		{/if}
 	{/snippet}
@@ -193,10 +195,15 @@
 				<p class="note">Polestar Client hasn't found WoW: Forever yet, so it can't install anything.</p>
 				<button class="btn primary" onclick={() => api.pickFolder()}>Locate the game</button>
 			</div>
-		{:else if addons.gameRunning}
+		{:else if guard}
 			<div class="banner" in:rise>
 				<Glyph name="info" color="var(--warning)" />
 				<p class="note">World of Warcraft is running. Close it before updating: the game only loads addons when it starts, and it may hold their files open.</p>
+			</div>
+		{:else if addons.gameRunning}
+			<div class="banner" in:rise>
+				<Glyph name="info" color="var(--textDim)" />
+				<p class="note">World of Warcraft is running: updates install now and load at your next /reload or login.</p>
 			</div>
 		{/if}
 
@@ -244,7 +251,7 @@
 						<span class="chip success" in:swap>Up to date</span>
 					{:else}
 						{@const action = p.status === 'install' ? 'install' : 'update'}
-						{#if addons.gameRunning && action === 'update'}
+						{#if guard && action === 'update'}
 							<button class="btn small" class:armed={armed === `${p.id}:update`} onclick={() => confirm(`${p.id}:update`, () => act(p, 'update'))}>
 								{armed === `${p.id}:update` ? 'Click again' : 'Update anyway'}
 							</button>

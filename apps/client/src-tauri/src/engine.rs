@@ -42,7 +42,7 @@ const REFUSED_RETRY: u64 = 30 * 60;
 /// How long the "server turned some data away" status stays up.
 const REJECTED_SHOWN_MS: i64 = 24 * 3600 * 1000;
 /// How often addon updates are looked for when that is on.
-const ADDON_CHECK: Duration = Duration::from_secs(6 * 3600);
+const ADDON_CHECK: Duration = Duration::from_secs(3600); // forever-dash: hourly (upstream: 6 h)
 /// The 401 answer to a token the server does not know (deleted, or never registered).
 pub const UNKNOWN_TOKEN: &str = "unknown token";
 

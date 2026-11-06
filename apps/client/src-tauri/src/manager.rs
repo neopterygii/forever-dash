@@ -25,6 +25,7 @@ pub struct AddonsView {
 	pub channel: Channel,
 	pub auto_check: bool,
 	pub auto_install: bool,
+	pub update_while_running: bool,
 	pub game_found: bool,
 	pub game_running: bool,
 	pub products: Vec<ProductView>,
@@ -83,6 +84,7 @@ pub fn view(state: &State) -> AddonsView {
 		channel: state.settings.channel,
 		auto_check: state.settings.auto_check,
 		auto_install: state.settings.auto_install,
+		update_while_running: state.settings.update_while_running,
 		game_found: addons_dir.is_some(),
 		game_running: state.game_running,
 		products,
@@ -101,7 +103,7 @@ impl Engine {
 		let (updates, auto_install, running) = {
 			let state = self.lock();
 			let updates: Vec<(&'static str, &'static str, String)> = view(&state).products.into_iter().filter(|p| p.status == "update").filter_map(|p| p.latest.map(|l| (p.id, p.name, l.version))).collect();
-			(updates, state.settings.auto_install, state.game_running)
+			(updates, state.settings.auto_install, state.game_running && !state.settings.update_while_running)
 		};
 		if updates.is_empty() {
 			return;
