@@ -1,16 +1,22 @@
 name: forever-dash addon release
 
-# Republishes upstream's latest Polestar release with our overlay (overlay/build.py: verified
-# upstream zips, patches checked against their base hashes, Polestar_DashSnapshot added, every TOC
-# at <x.y.z>.<n>) as release v<x.y.z>.<n> of this fork, with the asset names Polestar Client looks
-# for (Polestar-*, Polestar_Recorder-*, SHA256SUMS). The fork's client installs only from here.
+# Republishes an upstream Polestar release with our overlay (overlay/build.py: verified upstream
+# zips, patches checked against their base hashes, Polestar_DashSnapshot added, every TOC at
+# <x.y.z>.<n>) as release v<x.y.z>.<n> of this fork, with the asset names Polestar Client looks for
+# (Polestar-*, Polestar_Recorder-*, SHA256SUMS). The fork's client installs only from here.
 #
-# Scheduled: publishes when upstream has a release we have not built yet (n = 1). By hand
-# (workflow_dispatch): `rebuild` makes the next n for the current upstream release (after a
-# change to the overlay or the snapshot addon).
+# Which upstream release: overlay/upstream.txt, which Renovate bumps when upstream publishes one
+# (renovate.json).
+# - push to dash changing it or the overlay: publishes the next build (n + 1; n = 1 for a new
+#   upstream version).
+# - push to a renovate/ branch: the same build without publishing, as Renovate's check before it
+#   merges the bump into dash.
+# - by hand (workflow_dispatch): publishes if this upstream version has no build yet; `rebuild`
+#   makes the next n anyway.
 on:
-  schedule:
-    - cron: "17 */3 * * *"
+  push:
+    branches: [dash, "renovate/**"]
+    paths: ["overlay/**", "services/dash/addon-test/**", ".github/workflows/dash-release.yml"]
   workflow_dispatch:
     inputs:
       rebuild:
@@ -43,21 +49,24 @@ jobs:
         id: which
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
           REBUILD: ${{ inputs.rebuild || 'false' }}
         run: |
-          base="$(gh api 'repos/fitzforge/polestar/releases?per_page=50' --jq '[.[] | select(.draft == false and .prerelease == false) | .tag_name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))][0]')"
-          [ -n "$base" ] || { echo "::error::no upstream addon release found"; exit 1; }
-          base="${base#v}"
+          base="$(sed -n 's/^version:[[:space:]]*//p' overlay/upstream.txt)"
+          [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::overlay/upstream.txt has no version"; exit 1; }
           have="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | .tag_name | select(startswith(\"v${base}.\")) | ltrimstr(\"v${base}.\") | tonumber] | max // 0")"
-          if [ "$have" -gt 0 ] && [ "$REBUILD" != "true" ]; then
+          if [ "$EVENT" = workflow_dispatch ] && [ "$have" -gt 0 ] && [ "$REBUILD" != "true" ]; then
             echo "v${base}.${have} is out already; nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           n=$((have + 1))
+          publish=true
+          [ "$GITHUB_REF_NAME" = dash ] || publish=false
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "n=$n" >> "$GITHUB_OUTPUT"
-          echo "Building v${base}.${n}"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Building v${base}.${n} (publish: $publish)"
 
       - name: Upstream zips
         if: steps.which.outputs.skip != 'true'
@@ -76,7 +85,7 @@ jobs:
         run: python3 overlay/build.py upstream "${{ steps.which.outputs.n }}" out
 
       - name: Publish
-        if: steps.which.outputs.skip != 'true'
+        if: steps.which.outputs.skip != 'true' && steps.which.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           BASE: ${{ steps.which.outputs.base }}
