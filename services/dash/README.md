@@ -11,6 +11,7 @@ node tools/brand.cjs                       # ui/public/brand/*.svg (committed; r
 # Map art and game icons (Blizzard's art: local only, never committed), from wago.tools, no game client needed:
 (cd ../../rust && cargo build --release -p forge && ./target/release/forge data build --no-questie --forever-tables wago)
 node ../../tools/polestar.js planner art --out <art dir>   # terrain + zone maps
+node tools/dash-art.cjs <art dir>                           # Azeroth world map + layout, feathered zone maps
 node tools/export-icons.cjs <art dir>                       # race/sex portraits, class icons
 (cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
