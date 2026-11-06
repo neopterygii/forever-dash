@@ -294,9 +294,19 @@ pub fn journal(db: &Connection, char_id: &str) -> rusqlite::Result<Value> {
 		let (mut kills, mut kill_xp, mut quests, mut deaths) = (0, 0, 0, 0);
 		let mut levels: Vec<i64> = Vec::new();
 		let mut zones: Vec<String> = Vec::new();
+		let mut last_place = String::new();
 		for row in rows {
 			let (t, kind, map, x, y, fields) = row?;
 			let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
+			// Zone lines: none while the client has no zone text (loading screens), and only when the
+			// place changes (the Recorder also writes one when the map or the text flickers).
+			if kind == "zone" {
+				let place = format!("{}\t{}", f.get(3).map_or("", String::as_str), f.get(4).map_or("", String::as_str));
+				if f.get(3).is_none_or(|z| z.is_empty()) || place == last_place {
+					continue;
+				}
+				last_place = place;
+			}
 			match kind.as_str() {
 				"kill" => {
 					kills += 1;
