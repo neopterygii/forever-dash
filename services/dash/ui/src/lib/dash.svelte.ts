@@ -46,6 +46,9 @@ export const PIN: Record<string, [string, string]> = {
 	abandon: ['cross', 'textDim'],
 };
 
+/** Hours: "Last session" covers at least this much play. */
+const MIN_SESSION = 0.5;
+
 export const OVERVIEW_BUFFERS: [number, string][] = [[1, 'Last 1 h of play'], [6, 'Last 6 h of play'], [24, 'Last 24 h of play'], [72, 'Last 72 h of play']];
 export const FOCUS_BUFFERS: [string, string][] = [['session', 'Last session'], ['2', 'Last 2 h of play'], ['6', 'Last 6 h of play'], ['24', 'Last 24 h of play'], ['all', 'All play']];
 
@@ -135,7 +138,9 @@ class Dash {
 		const sessions = await api.sessions(id);
 		const last = sessions[sessions.length - 1] ?? [0, 0];
 		let from: number, to: number;
-		if (buffer === 'session') [from, to] = last;
+		// The last session, reaching back to at least MIN_SESSION of play: a quick login (standing in
+		// an inn, a /reload after logging in) is otherwise a session with no path to show.
+		if (buffer === 'session') [from, to] = [Math.min(last[0], playtimeFrom(sessions, MIN_SESSION)), last[1]];
 		else if (buffer === 'all') [from, to] = [sessions[0]?.[0] ?? 0, last[1]];
 		else if (buffer.startsWith('s:')) [from, to] = buffer.slice(2).split(':').map(Number) as Span;
 		else [from, to] = [playtimeFrom(sessions, Number(buffer)), last[1]];
