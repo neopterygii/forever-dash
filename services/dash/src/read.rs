@@ -61,7 +61,8 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 		        c.surname, c.sex, c.xp, c.xp_max, c.rested,
 		        c.realm_name, c.money, c.bind, c.guide,
 		        (SELECT MAX(saved) FROM snapshots s WHERE s.char_id = c.char_id),
-		        (SELECT json FROM snapshots s WHERE s.char_id = c.char_id ORDER BY saved DESC LIMIT 1)
+		        (SELECT json FROM snapshots s WHERE s.char_id = c.char_id ORDER BY saved DESC LIMIT 1),
+		        c.alt_seen, c.alt_rested, c.alt_resting, c.alt_xp, c.alt_xp_max, c.xp_t
 		 FROM characters c ORDER BY 10 DESC",
 	)?;
 	let mut out = Vec::new();
@@ -76,6 +77,10 @@ pub fn characters(db: &Connection) -> rusqlite::Result<Value> {
 			"guide": r.get::<_, Option<String>>(18)?.and_then(|g| serde_json::from_str::<Value>(&g).ok()),
 			"snapshotAt": r.get::<_, Option<f64>>(19)?,
 			"vitals": r.get::<_, Option<String>>(20)?.and_then(|j| serde_json::from_str::<Value>(&j).ok()).and_then(|v| v.get("stats").cloned()),
+			// Polestar's own entry (PolestarDB.alts): seen (server time), rested XP then, in an inn or city.
+			"polestar": json!({ "seen": r.get::<_, Option<f64>>(21)?, "rested": r.get::<_, Option<i64>>(22)?, "resting": r.get::<_, Option<i64>>(23)?.map(|v| v != 0),
+				"xp": r.get::<_, Option<i64>>(24)?, "xpMax": r.get::<_, Option<i64>>(25)? }),
+			"xpAt": r.get::<_, Option<f64>>(26)?,
 		}))
 	})?;
 	for row in rows {

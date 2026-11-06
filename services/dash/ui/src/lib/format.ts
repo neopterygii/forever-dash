@@ -1,3 +1,5 @@
+import type { Character } from './api';
+
 export const hhmm = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 export const day = (t: number) => new Date(t * 1000).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -44,4 +46,25 @@ export const powerColor = (t: string | undefined) => (t && POWER_COLOR[t]) || '#
 export function coins(copper: number | null | undefined): { g: number; s: number; c: number } | null {
 	if (copper == null) return null;
 	return { g: Math.floor(copper / 10000), s: Math.floor((copper % 10000) / 100), c: copper % 100 };
+}
+
+/**
+ * Rested XP now: the last known value plus what accrued since logout. Classic's rules, as Polestar
+ * estimates them: 5% of a level per 8 hours in an inn or city, a quarter of that elsewhere, capped at
+ * 1.5 levels. Recorder data (xp_t) wins while playing; Polestar's alts entry gives logout and resting.
+ */
+export function restedNow(c: Character, now = Date.now() / 1000): { rested: number; estimated: boolean } | null {
+	const p = c.polestar;
+	const xpMax = c.xpMax ?? p?.xpMax;
+	if (!xpMax) return null;
+	const cap = 1.5 * xpMax;
+	// The newer of the two readings.
+	const fromRecorder = c.rested != null && c.xpAt != null && (p?.seen == null || c.xpAt >= p.seen);
+	const base = fromRecorder ? c.rested! : (p?.rested ?? c.rested ?? 0);
+	const at = fromRecorder ? c.xpAt! : (p?.seen ?? c.last ?? now);
+	// Still playing: no accrual while logged in (the next upload carries it).
+	if (c.last && now - c.last < 600) return { rested: Math.min(cap, base), estimated: false };
+	const rate = (p?.resting ? 0.05 : 0.0125) * xpMax / (8 * 3600);
+	const since = Math.max(0, now - at);
+	return { rested: Math.min(cap, Math.round(base + rate * since)), estimated: since > 600 };
 }

@@ -24,6 +24,10 @@ export interface Character {
 	xp: number | null;
 	xpMax: number | null;
 	rested: number | null;
+	/** When xp/xpMax/rested were recorded. */
+	xpAt: number | null;
+	/** Polestar's own entry (PolestarDB.alts): when seen, rested XP then, whether in an inn or city. */
+	polestar: { seen: number | null; rested: number | null; resting: boolean | null; xp: number | null; xpMax: number | null };
 	/** From Polestar's own per-character data (PolestarDB.alts). */
 	realmName: string | null;
 	money: number | null;
