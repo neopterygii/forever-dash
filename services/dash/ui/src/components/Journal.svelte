@@ -25,6 +25,11 @@
 	/** The quest card open, as `<char>:<time>:<quest id>` of its line. */
 	let openQuest = $state<string | null>(null);
 	let drafts = $state<Record<string, string>>({});
+	/** The session whose diary entry is being edited, and its text. */
+	let editing = $state<string | null>(null);
+	let editText = $state('');
+	/** Sessions whose log is open (the diary entry is shown, the log folded, by default). */
+	let logOpen = $state<Record<string, boolean>>({});
 
 	// The first page, or as many sessions as are shown when only reloading (a note was added).
 	let shownFor: string | undefined;
@@ -90,6 +95,22 @@
 		}
 	}
 
+	const sessionKey = (s: Session) => `${s.char}:${s.start}`;
+	const SOURCE: Record<string, string> = { you: 'Your words', ai: 'Written from the log', template: 'From the log' };
+	function sourceLabel(s: Session): string {
+		if (s.diary.source === 'ai') return `Written from the log by ${s.diary.model?.includes('gemini') ? 'Gemini' : (s.diary.model ?? 'a model')}`;
+		return SOURCE[s.diary.source] ?? '';
+	}
+	function startEdit(s: Session) {
+		editing = sessionKey(s);
+		editText = s.diary.text;
+	}
+	async function saveEdit(s: Session, text: string) {
+		await api.setDiary(s.char, s.start, text);
+		editing = null;
+		reload++;
+	}
+
 	async function addNote(s: Session) {
 		const k = draftKey(s);
 		const text = (drafts[k] ?? '').trim();
@@ -116,11 +137,31 @@
 					<span class="when">{hhmm(s.start)}–{hhmm(s.end)} · {Math.round(s.seconds / 60)} min · {s.zones.join(', ')}</span>
 					<button class="replay" onclick={() => dash.run(replay(s))}>Replay on map</button>
 				</div>
+				<div class="diary">
+					{#if editing === sessionKey(s)}
+						<textarea bind:value={editText} rows="7" maxlength="8000" aria-label="Your diary entry"></textarea>
+						<div class="dbar">
+							<button class="save" onclick={() => dash.run(saveEdit(s, editText))}>Save</button>
+							<button onclick={() => (editing = null)}>Cancel</button>
+							{#if s.diary.source === 'you'}<button class="restore" onclick={() => dash.run(saveEdit(s, ''))}>Use the written entry</button>{/if}
+						</div>
+					{:else}
+						<p>{s.diary.text}</p>
+						<div class="dbar">
+							<span class="src">{sourceLabel(s)}</span>
+							<button onclick={() => startEdit(s)}>Edit</button>
+						</div>
+					{/if}
+				</div>
 				<div class="facts">
 					{#if s.levels.length}<span>level <b>{s.levels[0] - 1} → {s.levels[s.levels.length - 1]}</b></span>{/if}
 					<span><b>{s.quests}</b> quests</span><span><b>{s.kills}</b> kills</span><span><b>{s.deaths}</b> deaths</span>
 					<span><b>{(s.yards / 1000).toFixed(1)}k</b> yd walked</span>
 				</div>
+				<button class="logt" aria-expanded={!!logOpen[sessionKey(s)]} onclick={() => (logOpen[sessionKey(s)] = !logOpen[sessionKey(s)])}>
+					<i class:on={logOpen[sessionKey(s)]}></i>{logOpen[sessionKey(s)] ? 'Hide the log' : `The log · ${items(s).length} entries`}
+				</button>
+				{#if logOpen[sessionKey(s)]}
 				<ul class="events">
 					{#each items(s) as e, j (j)}
 						<li class="k-{e.kind}">
@@ -133,6 +174,7 @@
 						{#if e.quest && openQuest === qkey(s, e)}<li class="card"><QuestCard char={s.char} id={e.quest.id} /></li>{/if}
 					{/each}
 				</ul>
+				{/if}
 				<form class="note" onsubmit={(ev) => { ev.preventDefault(); dash.run(addNote(s)); }}>
 					<input placeholder="Add a note to this session…" maxlength="4000" bind:value={drafts[draftKey(s)]} />
 					<button>Add</button>
@@ -161,6 +203,19 @@
 	h3 { font-size: 15px; }
 	.when { color: var(--textDim); }
 	.replay { margin-left: auto; background: var(--chip); border: 0; border-radius: 6px; padding: 4px 10px; color: var(--accent); font-weight: 600; }
+	.diary { padding: 10px 12px 2px; }
+	.diary p { margin: 0; line-height: 1.55; font-size: 13.5px; white-space: pre-line; }
+	.diary textarea { width: 100%; box-sizing: border-box; background: var(--well); border: 1px solid var(--border); border-radius: 6px; padding: 8px; color: var(--text); font: inherit; font-size: 13.5px; line-height: 1.5; resize: vertical; }
+	.dbar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+	.dbar .src { margin-right: auto; font-size: 11px; color: var(--textMuted); }
+	.dbar button { background: var(--chip); border: 0; border-radius: 6px; padding: 3px 10px; font-size: 12px; color: var(--textDim); cursor: pointer; }
+	.dbar button:hover { color: var(--text); }
+	.dbar .save { color: var(--accent); font-weight: 600; }
+	.dbar .restore { margin-left: auto; }
+	.logt { display: flex; align-items: center; gap: 6px; margin: 8px 12px 0; padding: 4px 0; background: none; border: 0; color: var(--textDim); font-size: 12px; cursor: pointer; }
+	.logt:hover { color: var(--text); }
+	.logt i { width: 12px; height: 12px; background: currentColor; mask: url(/glyph/chevron-down.png) center / contain no-repeat; -webkit-mask: url(/glyph/chevron-down.png) center / contain no-repeat; transform: rotate(-90deg); transition: transform 0.12s; }
+	.logt i.on { transform: none; }
 	.facts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
 	.facts span { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--textDim); }
 	.facts b { color: var(--text); font-weight: 700; }

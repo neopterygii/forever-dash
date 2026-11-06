@@ -25,3 +25,5 @@ csv = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
+chrono-tz = "0.10"
+chrono = "0.4"

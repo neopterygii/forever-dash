@@ -118,9 +118,18 @@ export interface OverviewChar {
 	events: DashEvent[];
 }
 
+/** A session's diary entry: yours, the model's prose, or written from the log (diary.rs). */
+export interface DiaryEntry {
+	text: string;
+	source: 'you' | 'ai' | 'template';
+	model?: string | null;
+	at?: number;
+}
+
 export interface Session {
 	/** Whose session (the journal of everyone mixes them). */
 	char: string;
+	diary: DiaryEntry;
 	start: number;
 	end: number;
 	seconds: number;
@@ -215,6 +224,11 @@ export const api = {
 		get<JournalPage>(`/api/journal?${q({ limit, ...(char ? { char } : {}), ...(after ? { before: after.start, beforeChar: after.char } : {}) })}`),
 	quest: (char: string, id: number) => get<QuestInfo>(`/api/quest?${q({ char, id })}`),
 	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
+	/** Your own diary entry for a session; empty text goes back to the written one. */
+	setDiary: async (char: string, start: number, text: string) => {
+		const r = await fetch('/api/diary', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, start, text }) });
+		if (!r.ok) throw new Error(`diary: ${r.status}`);
+	},
 	addNote: async (char: string, t: number, text: string) => {
 		const r = await fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, t, text }) });
 		if (!r.ok) throw new Error(`notes: ${r.status}`);

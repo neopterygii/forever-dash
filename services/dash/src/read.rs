@@ -195,7 +195,7 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 }
 
 /// A quest's title: as the character saw it (`text` records), else Polestar's reference data.
-fn quest_title(db: &Connection, q: &str) -> String {
+pub(crate) fn quest_title(db: &Connection, q: &str) -> String {
 	db.query_row("SELECT title FROM quests WHERE id = ?1", [q], |r| r.get::<_, String>(0))
 		.ok()
 		.or_else(|| crate::names::name(db, "quest", q))
@@ -430,8 +430,9 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 			.query_map(params![char_id, start, end + SESSION_GAP], |r| Ok(json!({ "id": r.get::<_, i64>(0)?, "t": r.get::<_, f64>(1)?, "text": r.get::<_, String>(2)? })))?
 			.collect::<Result<_, _>>()?;
 		let (dist, _) = distance(db, &frames, char_id, start, end)?;
+		let diary = crate::diary::entry(db, char_id, start, end)?;
 		out.push(json!({
-			"char": char_id, "start": start, "end": end, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
+			"char": char_id, "start": start, "end": end, "diary": diary, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
 		}));
 	}
@@ -490,7 +491,7 @@ fn fill_tokens(text: &str, name: &str, class: &str, race: &str, sex: Option<i64>
 }
 
 /// "WARRIOR" -> "Warrior", "Scourge" -> "Undead", "NightElf" -> "Night Elf".
-fn pretty_token(t: &str) -> String {
+pub(crate) fn pretty_token(t: &str) -> String {
 	match t {
 		"Scourge" => return "Undead".into(),
 		"" => return String::new(),
@@ -584,7 +585,7 @@ pub fn quest(db: &Connection, char_id: &str, q: i64) -> rusqlite::Result<Value> 
 	}))
 }
 
-fn distance(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f64, to: f64) -> rusqlite::Result<(f64, usize)> {
+pub(crate) fn distance(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f64, to: f64) -> rusqlite::Result<(f64, usize)> {
 	let mut st = db.prepare("SELECT map, x, y FROM positions WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 	let mut prev: Option<(i64, f64, f64)> = None;
 	let (mut d, mut n) = (0.0, 0);

@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS items (
 	inv_type INTEGER,
 	icon INTEGER
 );
+-- NPCs with a name of their own (a rank, or one spawn point: Hogger, Executor Arren), as opposed
+-- to one of many (a Scarlet Initiate): the diary writes an article before the others.
+CREATE TABLE IF NOT EXISTS npc_named (id INTEGER PRIMARY KEY);
 -- Polestar's reference facts per quest (data/forever/quests.json).
 CREATE TABLE IF NOT EXISTS quest_ref (
 	id INTEGER PRIMARY KEY,
@@ -70,6 +73,24 @@ fn csv_rows(path: &Path, cols: &[&str]) -> Result<Vec<HashMap<String, String>>, 
 	Ok(out)
 }
 
+/// NPCs with a name of their own: a rank (elite, rare, boss) or a single spawn point.
+fn named_npcs(tx: &Connection, path: &Path) -> Result<usize, String> {
+	let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+	let v: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+	let obj = v.as_object().ok_or_else(|| format!("{}: not an object", path.display()))?;
+	let mut st = tx.prepare_cached("INSERT OR IGNORE INTO npc_named (id) VALUES (?1)").map_err(|e| e.to_string())?;
+	let mut n = 0;
+	for (k, npc) in obj {
+		let Ok(id) = k.parse::<i64>() else { continue };
+		let ranked = npc.get("rank").and_then(Value::as_i64).is_some_and(|r| r > 0);
+		let points: usize = npc.get("spawns").and_then(Value::as_object).map_or(0, |s| s.values().map(|z| z.get("pts").and_then(Value::as_array).map_or(0, Vec::len)).sum());
+		if ranked || points == 1 {
+			n += st.execute([id]).map_err(|e| e.to_string())?;
+		}
+	}
+	Ok(n)
+}
+
 /// Polestar's per-quest facts: level, zone, objectives, who starts and ends it.
 fn quest_refs(tx: &Connection, path: &Path) -> Result<usize, String> {
 	let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -99,7 +120,7 @@ fn quest_refs(tx: &Connection, path: &Path) -> Result<usize, String> {
 pub fn import(db: &mut Connection, data: &Path, tables: &Path) -> Result<Vec<(String, usize)>, String> {
 	db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
 	let tx = db.transaction().map_err(|e| e.to_string())?;
-	tx.execute_batch("DELETE FROM names; DELETE FROM items; DELETE FROM quest_ref;").map_err(|e| e.to_string())?;
+	tx.execute_batch("DELETE FROM names; DELETE FROM items; DELETE FROM quest_ref; DELETE FROM npc_named;").map_err(|e| e.to_string())?;
 	let mut counts = Vec::new();
 	let mut put = |kind: &str, rows: Vec<(i64, String)>| -> Result<(), String> {
 		let mut st = tx.prepare_cached("INSERT OR REPLACE INTO names (kind, id, name) VALUES (?1, ?2, ?3)").map_err(|e| e.to_string())?;
@@ -122,6 +143,7 @@ pub fn import(db: &mut Connection, data: &Path, tables: &Path) -> Result<Vec<(St
 	put("uimap", col(csv_rows(&tables.join("UiMap.csv"), &["ID", "Name_lang"])?, "Name_lang"))?;
 	drop(put);
 	counts.push(("quest facts".into(), quest_refs(&tx, &data.join("quests.json"))?));
+	counts.push(("named npcs".into(), named_npcs(&tx, &data.join("npcs.json"))?));
 
 	// Items: names, quality, levels and slot from ItemSparse, the icon from Item; Polestar's names
 	// for items the sparse table lacks.

@@ -8,6 +8,10 @@
 //!   forever-dash spoken sync --dir <spoken dir> [--db dash.db]     newest Spoken quest narration release
 //!   forever-dash spoken import --dir <unpacked pack folders> [--db dash.db]
 //!
+//! `serve --ai-url URL --ai-key-file FILE [--ai-model diary]` also has a model write each closed
+//! session's diary entry in prose (an OpenAI-compatible endpoint: the LiteLLM gateway); without it
+//! every entry is the template's.
+//!
 //! `serve --spoken <dir>` plays Spoken's quest narration in the journal and keeps it up to date
 //! (checks rusty-key/spoken-wow's releases at start and every day).
 //!
@@ -15,6 +19,7 @@
 //! Recorder SavedVariables and the per-character ones (charId -> name/realm) and uploads them.
 
 mod db;
+mod diary;
 mod ingest;
 mod names;
 mod read;
@@ -179,6 +184,25 @@ async fn add_note(State(db): State<Db>, Json(n): Json<NoteBody>) -> Response {
 	}
 }
 
+#[derive(Deserialize)]
+struct DiaryBody {
+	char: String,
+	start: f64,
+	/// Your own entry; empty = back to the written one.
+	text: String,
+}
+
+async fn set_diary(State(db): State<Db>, Json(d): Json<DiaryBody>) -> Response {
+	if d.text.len() > 8000 {
+		return (StatusCode::BAD_REQUEST, "too long").into_response();
+	}
+	let db = db.lock().unwrap();
+	match diary::set_mine(&db, &d.char, d.start, &d.text).and_then(|_| diary::entry(&db, &d.char, d.start, d.start)) {
+		Ok(_) => Json(json!({ "ok": true })).into_response(),
+		Err(e) => err500(e),
+	}
+}
+
 async fn stats(State(db): State<Db>) -> Response {
 	let db = db.lock().unwrap();
 	let count = |sql: &str| db.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(-1);
@@ -221,6 +245,11 @@ async fn serve(args: &[String]) {
 			std::thread::sleep(std::time::Duration::from_secs(24 * 3600));
 		});
 	}
+	if let Some(ai) = diary::Ai::from_args(args) {
+		println!("diary: entries written by {} at {}", ai.model, ai.url);
+		let db_path = db_path.clone();
+		std::thread::spawn(move || diary::run(ai, db_path));
+	}
 	let app = Router::new()
 		.route("/v1/upload", post(upload))
 		.route("/api/characters", get(characters))
@@ -234,6 +263,7 @@ async fn serve(args: &[String]) {
 		.route("/api/item-ids", get(item_ids))
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
+		.route("/api/diary", post(set_diary))
 		.route("/api/stats", get(stats))
 		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
 		.nest_service("/art", ServeDir::new(art).precompressed_gzip())

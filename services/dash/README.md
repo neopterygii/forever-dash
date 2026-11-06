@@ -44,6 +44,12 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   layout rules use global class names). Without `--art` MapView draws its grid; with
   `planner art` output it draws terrain and zone art.
 - Raw chunks are kept, so derived tables can be rebuilt after a Recorder schema change.
+- **Diary** (`src/diary.rs`): each session as a short first-person entry above its log, written
+  from templates (deterministic, instant). With `serve --ai-url URL --ai-key-file FILE [--ai-model
+  diary]` (an OpenAI-compatible endpoint: the LiteLLM gateway on Unraid, Gemini only) a worker
+  rewrites closed sessions in prose, newest first, and keeps the answer; a failure keeps the
+  template entry until the next round. `POST /api/diary` stores your own entry (empty = back to the
+  written one). Only recorded facts go into an entry or a prompt.
 - **Quest narration** (`serve --spoken <dir>`, `src/spoken.rs`): the journal's accept and turn-in
   lines play the voice-over the Spoken addons play in game (rusty-key/spoken-wow). The server
   follows its `quests-audio/v*` releases (at start, then daily): it downloads
