@@ -2,7 +2,7 @@
 	// The focused character's journal, as a panel that drops down over the map: sessions newest
 	// first, their events and notes. Clicking a session or an event replays it on the map behind,
 	// with the panel left open; the session on the map is highlighted.
-	import { api, type DashEvent, type Session } from '../lib/api';
+	import { api, type DashEvent, type Pos, type Session } from '../lib/api';
 	import { dash } from '../lib/dash.svelte';
 	import { day, hhmm } from '../lib/format';
 
@@ -39,9 +39,14 @@
 		}
 		return out;
 	});
-	function seek(t: number) {
+	/** The map goes to the event's spot (lib/dash `focusPoint`, MapPane zooms there). */
+	function goTo(pos: Pos | null | undefined) {
+		if (pos?.c !== undefined && pos.wx !== undefined && pos.wy !== undefined) dash.focusPoint = { c: pos.c, wx: pos.wx, wy: pos.wy };
+	}
+	function seek(e: DashEvent) {
 		dash.playing = false;
-		dash.t = t;
+		dash.t = e.t;
+		goTo(e.pos);
 	}
 
 	$effect(() => {
@@ -54,13 +59,16 @@
 		return () => (stale = true);
 	});
 
-	type Item = { t: number; kind: string; text: string };
+	type Item = { t: number; kind: string; text: string; pos?: Pos | null };
 	const items = (s: Session): Item[] => [...s.events, ...s.notes.map((n) => ({ t: n.t, kind: 'note', text: n.text }))].sort((a, b) => b.t - a.t); // newest first, as the sessions
 	const key = (s: Session) => `s:${s.start}:${s.end}`;
 
-	async function replay(s: Session, t?: number) {
+	async function replay(s: Session, e?: Item) {
 		await dash.showFocus(id!, key(s));
-		if (t !== undefined) dash.t = t;
+		if (e) {
+			dash.t = e.t;
+			goTo(e.pos);
+		}
 	}
 
 	async function addNote(s: Session, i: number) {
@@ -87,7 +95,7 @@
 					<ul class="events">
 						{#each g.items as e, j (j)}
 							<li class="k-{e.kind}">
-								<button onclick={() => seek(e.t)}>
+								<button onclick={() => seek(e)}>
 									<time>{hhmm(e.t)}</time><b class="ji" style:background={dash.colorOf(e.char)}></b>
 									<span><b class="who" style:color={dash.colorOf(e.char)}>{dash.name(e.char)}</b> {e.text}</span>
 								</button>
@@ -115,7 +123,7 @@
 				<ul class="events">
 					{#each items(s) as e, j (j)}
 						<li class="k-{e.kind}">
-							<button onclick={() => dash.run(replay(s, e.t))}><time>{hhmm(e.t)}</time><b class="ji"></b><span>{e.text}</span></button>
+							<button onclick={() => dash.run(replay(s, e))}><time>{hhmm(e.t)}</time><b class="ji"></b><span>{e.text}</span></button>
 						</li>
 					{/each}
 				</ul>

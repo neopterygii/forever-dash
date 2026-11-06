@@ -35,6 +35,7 @@ export interface MapViewApi {
 	setCharacter(ch: { c: number; wx: number; wy: number; heading: number } | null): void;
 	setContinent(c: number): void;
 	setMode(mode: 'world' | 'continent'): void;
+	setView(v: { c?: number; wx?: number; wy?: number; zoom?: number }, opts?: { animate?: boolean }): void;
 	fitWorld(c: number, pts: [number, number][], opts?: { padding?: number; maxZoom?: number; animate?: boolean; right?: number }): void;
 	resize(): void;
 	toScreen(c: number, wx: number, wy: number): { x: number; y: number } | null;

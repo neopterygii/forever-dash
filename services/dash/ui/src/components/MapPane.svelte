@@ -138,6 +138,24 @@
 		info = null;
 	});
 
+	// A journal event clicked: go to its spot at region-to-ground zoom (zone art meeting the terrain),
+	// centred in the part of the map the journal panel leaves visible. Runs after the fit above (the
+	// replay's own), so the event wins.
+	const EVENT_ZOOM = 0.45;
+	$effect(() => {
+		const p = dash.focusPoint;
+		if (!map || !p) return;
+		dash.focusPoint = null;
+		const choice = mapOf(map, p.c);
+		if (choice !== shown) {
+			shown = choice;
+			showMap(map, choice, false);
+		}
+		// Screen x = -wy (east is right): the panel's half width, in yards, shifts the centre east.
+		const shift = dash.journalOpen ? 212 / EVENT_ZOOM : 0;
+		queueMicrotask(() => map!.setView({ c: p.c, wx: p.wx, wy: p.wy - shift, zoom: EVENT_ZOOM }, { animate: true }));
+	});
+
 	// The map was hidden behind the journal: re-measure when it shows again.
 	$effect(() => {
 		if (visible) map?.resize();

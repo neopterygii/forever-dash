@@ -61,6 +61,8 @@ class Dash {
 	playing = $state(false);
 	/** The journal panel over the map. */
 	journalOpen = $state(false);
+	/** A spot the map should go to (a journal event clicked): consumed by the map. */
+	focusPoint = $state.raw<{ c: number; wx: number; wy: number } | null>(null);
 	/** The character sheet window: whose, and gear or bags. */
 	sheet = $state<{ id: string; view: 'gear' | 'bags' } | null>(null);
 	/** Bumped to ask the map to fit its view to what is loaded. */
