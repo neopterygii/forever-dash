@@ -14,7 +14,7 @@ for (const name of names) {
 	const png = glyphs.renderGlyph(name, 64);
 	if (png) { fs.writeFileSync(path.join(out, 'glyph', `${name}.png`), png); n++; }
 }
-for (const t of ['arrow', 'arrow-glow', 'pin', 'pin-fill', 'ring']) {
+for (const t of ['arrow', 'arrow-glow', 'glow', 'pin', 'pin-fill', 'ring']) {
 	const png = glyphs.mediaPng('Nav', t);
 	if (png) fs.writeFileSync(path.join(out, 'media', 'Nav', `${t}.png`), png);
 }

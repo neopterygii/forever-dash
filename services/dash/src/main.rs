@@ -3,6 +3,7 @@
 //!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR]
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
+//!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
 //!
 //! `upload` stands in for the Polestar Client fork's `dash` module: it reads every account's
 //! Recorder SavedVariables and the per-character ones (charId -> name/realm) and uploads them.
@@ -158,7 +159,8 @@ async fn serve(args: &[String]) {
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
 		.route("/api/stats", get(stats))
-		.nest_service("/art", ServeDir::new(art))
+		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
+		.nest_service("/art", ServeDir::new(art).precompressed_gzip())
 		// Inter and Fira Sans (SIL OFL 1.1), as the addon ships them.
 		.nest_service("/fonts", ServeDir::new(here.join("../../addon/Polestar/Media/Fonts")))
 		.fallback_service(ServeDir::new(web))
@@ -202,12 +204,11 @@ fn scan(wtf: &Path) -> Vec<Found> {
 				let id = vars.iter().rev().find(|(n, _)| n == "PolestarRecorderCharDB").and_then(|(_, v)| v.get("id")).and_then(|v| v.as_str()).map(str::to_string);
 				if let Some(id) = id.filter(|i| sv::valid_char_id(i)) {
 					let name = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
-					// Forever: `<acct>/<number>/<Name-Realm>/`; older clients: `<acct>/<Realm>/<Name>/`.
+					// Forever: `<acct>/<realm>/<Name>-<Surname>/` (the realm folder is a number there);
+					// characters without a surname: `<acct>/<realm>/<Name>/`.
 					let folder = name(&ch);
-					let who = match folder.split_once('-') {
-						Some((n, r)) if !n.is_empty() && !r.is_empty() => Who { name: n.to_string(), realm: r.to_string() },
-						_ => Who { name: folder, realm: name(&realm) },
-					};
+					let (first, surname) = folder.split_once('-').filter(|(n, s)| !n.is_empty() && !s.is_empty()).map_or((folder.as_str(), ""), |(n, s)| (n, s));
+					let who = Who { name: first.to_string(), surname: surname.to_string(), realm: name(&realm) };
 					characters.insert(id, who);
 				}
 			}
@@ -310,7 +311,11 @@ async fn main() {
 		}
 		Some("upload") => tokio::task::spawn_blocking(move || upload_cmd(&args)).await.unwrap(),
 		Some("dump") => dump(&args),
-		_ => Err("usage: forever-dash serve|upload|dump [options]".into()),
+		Some("reparse") => {
+			let mut db = db::open(&arg(&args, "--db", "dash.db")).map_err(|e| e.to_string());
+			db.as_mut().map_err(|e| e.clone()).and_then(ingest::reparse).map(|(ok, bad)| println!("reparsed {ok} chunks ({bad} unreadable)"))
+		}
+		_ => Err("usage: forever-dash serve|upload|dump|reparse [options]".into()),
 	};
 	if let Err(e) = r {
 		eprintln!("{e}");

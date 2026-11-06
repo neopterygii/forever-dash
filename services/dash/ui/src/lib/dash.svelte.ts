@@ -64,7 +64,8 @@ class Dash {
 	error = $state<string | null>(null);
 
 	name(id: string): string {
-		return this.chars.find((c) => c.id === id)?.name || id;
+		const c = this.chars.find((x) => x.id === id);
+		return c ? [c.name || id, c.surname].filter(Boolean).join(' ') : id;
 	}
 
 	async load() {

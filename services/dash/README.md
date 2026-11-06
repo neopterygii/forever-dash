@@ -8,11 +8,16 @@ trail replay (Polestar's planner MapView), and a play journal with notes. See
 cargo build --release
 node tools/export-media.cjs ui/public      # Polestar glyphs + Nav arrow as static PNGs (gitignored)
 node tools/brand.cjs                       # ui/public/brand/*.svg (committed; rerun after changing the mark)
+# Map art and game icons (Blizzard's art: local only, never committed), from wago.tools, no game client needed:
+(cd ../../rust && cargo build --release -p forge && ./target/release/forge data build --no-questie --forever-tables wago)
+node ../../tools/polestar.js planner art --out <art dir>   # terrain + zone maps
+node tools/export-icons.cjs <art dir>                       # race/sex portraits, class icons
 (cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
 ./target/release/forever-dash serve --db dash.db [--addr 127.0.0.1:8790] [--art <planner art dir>]
 ./target/release/forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 ./target/release/forever-dash dump --wtf <WTF dir>           # what the parser makes of it
+./target/release/forever-dash reparse --db dash.db           # rebuild derived tables from the raw chunks
 ```
 
 - `POST /v1/upload`: upstream ingest's body and answer (accepted / duplicate / rejected per

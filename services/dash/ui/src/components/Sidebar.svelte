@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { dash } from '../lib/dash.svelte';
-	import { ago, className, raceName } from '../lib/format';
+	import CharacterCard from './CharacterCard.svelte';
 
 	function pick(id: string | null) {
 		dash.run(id ? dash.showFocus(id) : dash.showOverview(dash.overview?.hours ?? 6));
@@ -15,14 +15,7 @@
 			<button class="all" onclick={() => pick(null)}><span class="n">All characters</span></button>
 		</li>
 		{#each dash.chars as c (c.id)}
-			{@const p = c.lastPos}
-			<li class:on={dash.mode === 'focus' && dash.focus?.id === c.id}>
-				<button onclick={() => pick(c.id)}>
-					<span class="n">{c.name || c.id}</span><span class="lv">{c.level ?? '?'}</span>
-					<span class="sub">{raceName(c.race)} {className(c.class)}{c.realm ? ` · ${c.realm}` : ''}</span>
-					<span class="seen">{p?.zone ? `${p.zone}${p.subzone ? ` · ${p.subzone}` : ''}` : ''}{c.last ? ` · ${ago(c.last)}` : ''}</span>
-				</button>
-			</li>
+			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} onpick={() => pick(c.id)} />
 		{/each}
 	</ul>
 	{#if dash.stats}
@@ -41,9 +34,6 @@
 	.chars li.on button { background: var(--selected); box-shadow: inset 2px 0 0 var(--accent); }
 	.n { font-weight: 700; font-size: 14px; }
 	.all .n { font-size: 13px; }
-	.lv { color: var(--accent); font-variant-numeric: tabular-nums; }
-	.sub { grid-column: 1 / -1; color: var(--textDim); font-size: 12px; }
-	.seen { grid-column: 1 / -1; color: var(--textMuted); font-size: 11px; }
 	.stats { padding: 12px 16px; color: var(--textMuted); font-size: 11px; border-top: 1px solid var(--border); }
 	@media (max-width: 720px) {
 		.side { max-height: 32vh; border-right: 0; border-bottom: 1px solid var(--border); }
