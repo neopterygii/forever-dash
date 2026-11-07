@@ -51,8 +51,10 @@ export interface Segment {
 	ghost: boolean;
 	/** Riding a mount the whole way. */
 	mounted: boolean;
-	/** A flight: where it was taken and where it landed (the way between is not recorded). */
+	/** A flight: where it was taken, the way flown and where it landed. */
 	flight: boolean;
+	/** The flight follows the flight network's track (else a straight guess). */
+	tracked: boolean;
 }
 
 /** A segment with its points ready for MapView. */
@@ -170,6 +172,8 @@ export interface Chapter {
 	quests: number;
 	deaths: number;
 	kills: number;
+	/** The levels the zone is made for (OpenMap's table), [min, max]; null for cities. */
+	zoneLevels: [number, number] | null;
 	/** Where play went next; null while the chapter goes on. */
 	next: string | null;
 	/** "Previously, in Elwynn Forest: ..." */

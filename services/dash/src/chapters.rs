@@ -12,6 +12,59 @@ use serde::Serialize;
 
 use crate::diary::{count, duration};
 
+/// Zone level ranges, from OpenMap's Data/Forever/Levels.lua (MIT, OpenMap contributors; github.com/
+/// openmap-world/openmap), which lists the Warcraft Wiki's "Zones by level (original)" and, for
+/// Forever's own zones, each zone's wiki page. Cities have none.
+const ZONE_LEVELS: &[(&str, i64, i64)] = &[
+	("Alterac Mountains", 30, 40),
+	("Arathi Highlands", 30, 40),
+	("Badlands", 35, 45),
+	("Blasted Lands", 45, 55),
+	("Tirisfal Glades", 1, 10),
+	("Silverpine Forest", 10, 20),
+	("Western Plaguelands", 51, 58),
+	("Eastern Plaguelands", 53, 60),
+	("Hillsbrad Foothills", 20, 30),
+	("The Hinterlands", 40, 50),
+	("Dun Morogh", 1, 10),
+	("Searing Gorge", 45, 50),
+	("Burning Steppes", 50, 58),
+	("Elwynn Forest", 1, 10),
+	("Deadwind Pass", 55, 60),
+	("Duskwood", 18, 30),
+	("Loch Modan", 10, 20),
+	("Redridge Mountains", 15, 25),
+	("Stranglethorn Vale", 30, 45),
+	("Swamp of Sorrows", 35, 45),
+	("Westfall", 10, 20),
+	("Wetlands", 20, 30),
+	("Durotar", 1, 10),
+	("Mulgore", 1, 10),
+	("The Barrens", 10, 25),
+	("Teldrassil", 1, 10),
+	("Darkshore", 10, 20),
+	("Ashenvale", 18, 30),
+	("Thousand Needles", 25, 35),
+	("Stonetalon Mountains", 15, 27),
+	("Desolace", 30, 40),
+	("Feralas", 40, 50),
+	("Dustwallow Marsh", 35, 45),
+	("Tanaris", 40, 50),
+	("Azshara", 45, 55),
+	("Felwood", 48, 55),
+	("Un'Goro Crater", 48, 55),
+	("Moonglade", 55, 60),
+	("Silithus", 55, 60),
+	("Winterspring", 55, 60),
+	("Riverglades", 35, 45),
+	("Zephras Isle", 1, 12),
+];
+
+/// The level range a zone is made for, if it has one.
+pub fn zone_levels(zone: &str) -> Option<(i64, i64)> {
+	ZONE_LEVELS.iter().find(|z| z.0 == zone).map(|z| (z.1, z.2))
+}
+
 /// Sessions shorter than this (seconds) join the chapter they fall in instead of starting one.
 const SHORT: f64 = 20.0 * 60.0;
 
@@ -32,6 +85,8 @@ pub struct Chapter {
 	pub quests: i64,
 	pub deaths: i64,
 	pub kills: i64,
+	/// The levels the zone is made for (OpenMap's table), if it has a range.
+	pub zone_levels: Option<(i64, i64)>,
 	/// Where play went next (None for the chapter still going on).
 	pub next: Option<String>,
 	/// The opening lines: "Previously, in Elwynn Forest: ...", "Back in Westfall ...".
@@ -147,6 +202,7 @@ fn build(rows: &[(f64, String, Vec<String>)], sessions: &[(f64, f64)]) -> Vec<Ch
 	for k in 0..out.len() {
 		out[k].n = k + 1;
 		out[k].next = out.get(k + 1).map(|c| c.zone.clone());
+		out[k].zone_levels = zone_levels(&out[k].zone);
 		out[k].intro = intro(&out[..k], &out[k]);
 	}
 	out
@@ -234,6 +290,8 @@ mod tests {
 			"Previously, in Westfall: I climbed from level 7 to 8 in about an hour, dying once. Now back in Elwynn Forest, where chapter 1 ended at level 7."
 		);
 		assert_eq!(ch[0].next.as_deref(), Some("Westfall"));
+		assert_eq!((ch[0].zone_levels, ch[1].zone_levels), (Some((1, 10)), Some((10, 20))));
+		assert_eq!((zone_levels("Riverglades"), zone_levels("Stormwind City")), (Some((35, 45)), None));
 		assert_eq!(of(&ch, 4.0 * h).map(|c| c.n), Some(1));
 		assert_eq!(of(&ch, 9.0 * h).map(|c| c.n), Some(3));
 	}

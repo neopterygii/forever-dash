@@ -1,7 +1,7 @@
 # forever-dash server: the dashboard API and its web UI. Build from the repository root:
 #   docker build -f services/dash/Dockerfile -t forever-dash .
-# The image holds no Blizzard data: map art (--art) and names (forever-dash names) come from the
-# mounted /data volume.
+# Map art (--art) and names (forever-dash names) come from the mounted /data volume; the flight
+# network's tracks (Polestar's Maps/FlightPaths.lua) are compiled in. The site is private.
 FROM node:24-bookworm-slim AS ui
 WORKDIR /src
 COPY tools tools
@@ -19,6 +19,7 @@ COPY rust/crates/polestar-recording rust/crates/polestar-recording
 COPY services/dash/Cargo.toml services/dash/Cargo.lock services/dash/
 COPY services/dash/proto services/dash/proto
 COPY services/dash/src services/dash/src
+COPY addon/Polestar/Maps/FlightPaths.lua addon/Polestar/Maps/FlightPaths.lua
 RUN cd services/dash && cargo build --release --locked
 
 FROM debian:bookworm-slim

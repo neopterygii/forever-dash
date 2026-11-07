@@ -152,7 +152,7 @@
 			{#if ch}
 				<div class="chapter">
 					<span class="cn">Chapter {ch.n}{ch.next ? '' : ' · now'}</span>
-					<h3>{ch.zone}</h3>
+					<h3>{ch.zone}{#if ch.zoneLevels}<small title="The levels the zone is made for">{ch.zoneLevels[0]}–{ch.zoneLevels[1]}</small>{/if}</h3>
 					<div class="cmeta">
 						{#if levels(ch)}<span>{levels(ch)}</span>{/if}
 						<span>{ch.sessions} {ch.sessions === 1 ? 'session' : 'sessions'}</span>
@@ -296,6 +296,7 @@
 	.chapter { margin: 14px 2px 10px; padding: 0 2px 10px; border-bottom: 1px solid var(--divider); }
 	.chapter .cn { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 	.chapter h3 { margin: 2px 0 4px; font-size: 18px; }
+	.chapter h3 small { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--textDim); }
 	.cmeta { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; color: var(--textDim); }
 	.cmeta span { background: var(--chip); border-radius: 999px; padding: 1px 8px; }
 	.chapter p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; font-style: italic; color: var(--textDim); }

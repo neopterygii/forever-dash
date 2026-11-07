@@ -125,6 +125,8 @@ pub struct Segment {
 	/// A flight: two points, where the flight was taken (the last position before it) and where it
 	/// landed. The Recorder writes no positions on a taxi, so the way in between is unknown.
 	pub flight: bool,
+	/// A flight drawn along the flight network's track (else a straight line).
+	pub tracked: bool,
 }
 
 /// Douglas-Peucker on (wx, wy): indices of the points kept.
@@ -209,6 +211,7 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 				ghost: r.ghost,
 				mounted: r.mounted,
 				flight: false,
+				tracked: false,
 				pts: keep.iter().flat_map(|&i| [r.pts[i].0 as f32, r.pts[i].1 as f32]).collect(),
 				ts: keep.iter().map(|&i| r.ts[i]).collect(),
 			}
@@ -222,17 +225,20 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 /// The longest a flight can last (seconds): a `taxi` with no `land` within this was cut off.
 const FLIGHT_MAX: f64 = 30.0 * 60.0;
 
-/// Flights taken in [from, to], as two-point segments: from the last position before the `taxi`
-/// record (on the same continent, in the last TRAIL_GAP) to the `land` record's position.
+/// Flights taken in [from, to]: from the last position before the `taxi` record (on the same
+/// continent, in the last TRAIL_GAP) along the flight network's track to the `land` record's
+/// position, timed by the distance flown; a straight line when the network has no way.
 fn flights(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f64, to: f64) -> rusqlite::Result<Vec<Segment>> {
 	let mut st = db.prepare(
-		"SELECT e.t,
+		"SELECT e.t, e.fields,
 		        (SELECT l.t FROM events l WHERE l.char_id = e.char_id AND l.kind = 'land' AND l.t > e.t AND l.t <= e.t + ?4 ORDER BY l.t LIMIT 1) AS lt
 		 FROM events e WHERE e.char_id = ?1 AND e.kind = 'taxi' AND e.t >= ?2 AND e.t <= ?3 ORDER BY e.t",
 	)?;
-	let taxis = st.query_map(params![char_id, from, to, FLIGHT_MAX], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, Option<f64>>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+	let taxis = st
+		.query_map(params![char_id, from, to, FLIGHT_MAX], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<f64>>(2)?)))?
+		.collect::<rusqlite::Result<Vec<_>>>()?;
 	let mut out = Vec::new();
-	for (t, lt) in taxis {
+	for (t, fields, lt) in taxis {
 		let Some(lt) = lt else { continue };
 		// No second `taxi` in between: that one owns the landing.
 		let between: i64 = db.query_row("SELECT COUNT(*) FROM events WHERE char_id = ?1 AND kind = 'taxi' AND t > ?2 AND t < ?3", params![char_id, t, lt], |r| r.get(0))?;
@@ -251,7 +257,30 @@ fn flights(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f
 			continue;
 		}
 		let ((ax, ay), (bx, by)) = (fa.world(sx, sy), fb.world(lx, ly));
-		out.push(Segment { c: fa.c, ghost: false, mounted: false, flight: true, pts: vec![ax as f32, ay as f32, bx as f32, by as f32], ts: vec![st_t.max(t - 1.0), lt] });
+		let t0 = st_t.max(t - 1.0);
+		// The way flown, from the flight network (taxi: from node, to node), else a straight line.
+		let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
+		let node = |i: usize| f.get(i).and_then(|v| v.parse::<i64>().ok());
+		let track = node(0).zip(node(1)).and_then(|(a, b)| crate::flights::route(a, b));
+		let mut pts: Vec<(f64, f64)> = vec![(ax, ay)];
+		if let Some(tr) = &track {
+			pts.extend(tr.chunks(2).map(|p| (p[0], p[1])));
+		}
+		pts.push((bx, by));
+		// Times along it in proportion to the distance flown (the walk to the flight master first).
+		let steps: Vec<f64> = pts.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).collect();
+		let total: f64 = steps[1..].iter().sum::<f64>().max(1e-6);
+		let mut ts = vec![t0];
+		let mut done = 0.0;
+		for (k, d) in steps.iter().enumerate() {
+			if k == 0 && pts.len() > 2 {
+				ts.push(t.max(t0));
+			} else {
+				done += d;
+				ts.push(t.max(t0) + (lt - t.max(t0)) * (done / total).min(1.0));
+			}
+		}
+		out.push(Segment { c: fa.c, ghost: false, mounted: false, flight: true, tracked: track.is_some(), pts: pts.iter().flat_map(|p| [p.0 as f32, p.1 as f32]).collect(), ts });
 	}
 	Ok(out)
 }
@@ -869,5 +898,24 @@ mod quest_text_tests {
 		let f = &segs[3];
 		assert_eq!(f.ts, vec![44.0, 200.0]);
 		assert_eq!(f.pts, vec![500.0, 180.0, 900.0, 900.0]);
+	}
+
+	#[test]
+	fn a_flight_follows_the_network() {
+		let db = crate::db::open(":memory:").unwrap();
+		// A map frame covering Stormwind to Westfall in world yards (top/bottom: wx, left/right: wy).
+		db.execute("INSERT INTO maps (id, type, parent, c, top, left, bottom, right) VALUES (1, 3, 0, 0, -8000, 2000, -11000, -1000)", []).unwrap();
+		let at = |wx: f64, wy: f64| (((wy - 2000.0) / -3000.0 * 10000.0) as i64, ((wx + 8000.0) / -3000.0 * 10000.0) as i64);
+		let (x, y) = at(-8840.0, 490.0);
+		db.execute("INSERT INTO positions VALUES ('a', 100, 1, ?1, ?2, 0)", params![x, y]).unwrap();
+		db.execute(r#"INSERT INTO events VALUES ('a', 105, 'taxi', NULL, NULL, NULL, '["2","4"]')"#, []).unwrap();
+		let (lx, ly) = at(-10628.0, 1037.0);
+		db.execute(r#"INSERT INTO events VALUES ('a', 400, 'land', 1, ?1, ?2, '["4","295"]')"#, params![lx, ly]).unwrap();
+		let (segs, _) = trail(&db, "a", 0.0, 1e9, 0.0).unwrap();
+		let f = segs.iter().find(|s| s.flight).unwrap();
+		assert!(f.tracked);
+		assert_eq!(f.pts.len() / 2, crate::flights::route(2, 4).unwrap().len() / 2 + 2);
+		assert_eq!((f.ts[0], f.ts[1], *f.ts.last().unwrap()), (104.0, 105.0, 400.0));
+		assert!(f.ts.windows(2).all(|w| w[1] >= w[0]));
 	}
 }

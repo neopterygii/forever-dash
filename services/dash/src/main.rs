@@ -21,6 +21,7 @@
 mod chapters;
 mod db;
 mod diary;
+mod flights;
 mod group;
 mod ingest;
 mod milestones;
