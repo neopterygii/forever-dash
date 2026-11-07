@@ -74,7 +74,7 @@
 		const pins: OverlayPin[] = [];
 		const addLines = (id: string, trails: Parameters<typeof split>[0]) => {
 			const color = dash.colorOf(id);
-			for (const r of split(trails, t)) lines.push({ c: r.c, pts: r.pts, color, faint: r.state === 'future', ghost: r.mode === 'fly' });
+			for (const r of split(trails, t)) lines.push({ c: r.c, pts: r.pts, color, faint: r.state === 'future', style: r.mode });
 		};
 		const addEvent = (e: DashEvent, id: string, all: boolean) => {
 			if (e.t > t || e.pos?.c === undefined || (!all && !OVERVIEW_EVENTS.has(e.kind))) return;
@@ -102,7 +102,8 @@
 			const a = posAt(f.trails, t);
 			if (a) pins.push({ id: f.id, c: a.c, wx: a.wx, wy: a.wy, name: dash.name(f.id), level: level(f.id), color: dash.colorOf(f.id), online: inSessions(f.sessions, t) || live, heading: a.heading });
 		}
-		overlay.set({ lines, events, pins });
+		// All play: translucent lines that build up where the character often went (hubs glow).
+		overlay.set({ lines, events, pins, dense: dash.mode === 'focus' && dash.focus?.buffer === 'all' });
 	});
 
 	// Fit the view when new data asks for it: the trails on the map with the most of them (Azeroth, or
@@ -212,6 +213,8 @@
 		{#each legendIds as id (id)}
 			<span><b class="sw" style:background={dash.colorOf(id)}></b>{dash.name(id)}</span>
 		{/each}
+		<span><b class="sw mount"></b>mounted</span>
+		<span><b class="sw flight"></b>flight</span>
 		<span><b class="sw ghost"></b>ghost run</span>
 		<span><b class="star">★</b>level</span>
 	</div>
@@ -247,6 +250,8 @@
 	.legend { position: absolute; top: 12px; right: 12px; transition: opacity 0.15s; display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: var(--well); font-size: 11px; color: var(--textDim); pointer-events: none; }
 	.legend span { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { display: inline-block; width: 16px; height: 3px; border-radius: 2px; }
+	.sw.mount { height: 6px; background: linear-gradient(var(--textDim) 0 2.4px, #fff 2.4px 3.6px, var(--textDim) 3.6px); }
+	.sw.flight { height: 2px; background: repeating-linear-gradient(90deg, var(--textDim) 0 5px, transparent 5px 9px); }
 	.sw.ghost { background: repeating-linear-gradient(90deg, var(--textDim) 0 2px, transparent 2px 6px); }
 	.star { color: #f6c544; font-size: 12px; }
 	.info { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }

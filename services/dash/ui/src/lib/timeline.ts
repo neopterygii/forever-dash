@@ -106,17 +106,20 @@ export function posAt(segs: Trail[], t: number): At | null {
 	return best;
 }
 
+/** How a stretch of trail is drawn: on foot, mounted, dead (a ghost run) or a flight. */
+export type LineStyle = 'walk' | 'mount' | 'ghost' | 'flight';
+
 export interface Route {
 	c: number;
 	pts: Float32Array;
-	mode: string;
+	mode: LineStyle;
 	state: 'past' | 'future';
 }
 
 /** Trails split at t into past and future routes (MapView.setRoute). */
 export function split(segs: Trail[], t: number, out: Route[] = []): Route[] {
 	for (const s of segs) {
-		const mode = s.ghost ? 'fly' : 'walk';
+		const mode: LineStyle = s.flight ? 'flight' : s.ghost ? 'ghost' : s.mounted ? 'mount' : 'walk';
 		const ts = s.ts;
 		if (t >= ts[ts.length - 1]) out.push({ c: s.c, pts: s.f32, mode, state: 'past' });
 		else if (t <= ts[0]) out.push({ c: s.c, pts: s.f32, mode, state: 'future' });

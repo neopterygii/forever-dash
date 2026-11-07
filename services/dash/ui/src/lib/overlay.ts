@@ -5,6 +5,7 @@
 // changes (checked every animation frame). Projection: MapView's own toScreen, as an affine map
 // per continent from three points (exact: MapView's view is linear in world yards).
 import type { MapViewApi } from './mapview';
+import type { LineStyle } from './timeline';
 
 export interface OverlayLine {
 	c: number;
@@ -12,7 +13,7 @@ export interface OverlayLine {
 	pts: ArrayLike<number>;
 	color: string;
 	faint: boolean;
-	ghost: boolean;
+	style: LineStyle;
 }
 /** How far (world yards) a smoothed trail may bow away from the straight line between two recorded points. */
 export const SMOOTH_YD = 3;
@@ -105,8 +106,46 @@ export interface OverlayData {
 	lines: OverlayLine[];
 	events: OverlayEvent[];
 	pins: OverlayPin[];
+	/** Many trails over each other (all play): translucent strokes without chevrons, so places
+	 *  passed often build up brighter instead of a tangle of solid lines. */
+	dense?: boolean;
 }
 export type Hit = { kind: 'pin'; pin: OverlayPin } | { kind: 'event'; event: OverlayEvent } | null;
+
+/**
+ * Douglas-Peucker on flat x, y pairs: the points kept (as flat pairs) so that none of the dropped
+ * ones lies further than `tol` from the line. The first and last always stay.
+ */
+export function simplifyFlat(p: ArrayLike<number>, tol: number): Float32Array {
+	const n = p.length >> 1;
+	if (n < 3) return Float32Array.from(p);
+	const keep = new Uint8Array(n);
+	keep[0] = keep[n - 1] = 1;
+	const stack: [number, number][] = [[0, n - 1]];
+	while (stack.length) {
+		const [a, b] = stack.pop()!;
+		const ax = p[2 * a], ay = p[2 * a + 1], dx = p[2 * b] - ax, dy = p[2 * b + 1] - ay;
+		const len = Math.hypot(dx, dy);
+		let best = -1, at = -1;
+		for (let i = a + 1; i < b; i++) {
+			const px = p[2 * i] - ax, py = p[2 * i + 1] - ay;
+			const d = len < 1e-9 ? Math.hypot(px, py) : Math.abs(px * dy - py * dx) / len;
+			if (d > best) [best, at] = [d, i];
+		}
+		if (best > tol) {
+			keep[at] = 1;
+			stack.push([a, at], [at, b]);
+		}
+	}
+	const out: number[] = [];
+	for (let i = 0; i < n; i++) if (keep[i]) out.push(p[2 * i], p[2 * i + 1]);
+	return Float32Array.from(out);
+}
+
+/** Trails longer than this (points) are thinned for the zoom before drawing. */
+const RESIMPLIFY_FROM = 400;
+/** The thinning's tolerance: well under a pixel, so it never shows. */
+const RESIMPLIFY_PX = 0.5;
 
 type Affine = { x0: number; y0: number; ax: number; ay: number; bx: number; by: number; wx0: number; wy0: number };
 
@@ -116,6 +155,7 @@ const CHEVRON_EVERY = 64; // px between direction chevrons
 const EVENTS_FROM = 0.06;
 const LEVELS_FROM = 0.035;
 const MIN_STEP = 1.5; // px: closer points are merged
+const DENSE_STROKE = 6; // points per stroke in dense mode
 
 export class TrailOverlay {
 	private ctx: CanvasRenderingContext2D;
@@ -129,6 +169,8 @@ export class TrailOverlay {
 	private pills: [number, number, number, number][] = [];
 	private shown: { kind: 'pin' | 'event'; x: number; y: number; r: number; ref: OverlayPin | OverlayEvent }[] = [];
 	private resize: ResizeObserver;
+	/** Long trails thinned per zoom step (tolerance a power of two in yards), with their bounds. */
+	private thin = new WeakMap<ArrayLike<number>, { box: [number, number, number, number]; byTol: Map<number, Float32Array> }>();
 
 	constructor(
 		private canvas: HTMLCanvasElement,
@@ -203,55 +245,113 @@ export class TrailOverlay {
 			const dx = wx - a.wx0, dy = wy - a.wy0;
 			return [a.x0 + a.ax * dx + a.bx * dy, a.y0 + a.ay * dx + a.by * dy];
 		};
-		const { lines, events, pins } = this.data;
-		for (const l of lines.filter((l) => l.faint)) this.line(l, proj);
-		for (const l of lines.filter((l) => !l.faint)) this.line(l, proj);
+		const { lines, events, pins, dense } = this.data;
+		for (const l of lines.filter((l) => l.faint)) this.line(l, proj, !!dense);
+		for (const l of lines.filter((l) => !l.faint)) this.line(l, proj, !!dense);
 		for (const e of events) this.event(e, proj);
 		for (const p of [...pins].sort((a, b) => Number(a.online) - Number(b.online) || Number(a.heading !== undefined) - Number(b.heading !== undefined))) this.pin(p, proj);
 	}
 
-	private screenPts(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null): [number, number][] {
+	private screenPts(c: number, pts: ArrayLike<number>, proj: (c: number, wx: number, wy: number) => [number, number] | null): [number, number][] {
 		const out: [number, number][] = [];
-		for (let i = 0; i + 1 < l.pts.length; i += 2) {
-			const p = proj(l.c, l.pts[i], l.pts[i + 1]);
+		for (let i = 0; i + 1 < pts.length; i += 2) {
+			const p = proj(c, pts[i], pts[i + 1]);
 			if (!p) return [];
 			const last = out[out.length - 1];
-			if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= MIN_STEP || i + 2 >= l.pts.length) out.push(p);
+			if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= MIN_STEP || i + 2 >= pts.length) out.push(p);
 		}
 		return out;
 	}
 
-	private line(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
-		const raw = this.screenPts(l, proj);
-		if (raw.length < 2) return;
+	/** A long trail's points thinned for this zoom (cached per power-of-two tolerance), or null when
+	 *  it lies wholly off screen. Short trails come back as they are. */
+	private visiblePts(l: OverlayLine, pxPerYd: number, proj: (c: number, wx: number, wy: number) => [number, number] | null): ArrayLike<number> | null {
+		let e = this.thin.get(l.pts);
+		if (!e) {
+			const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+			for (let i = 0; i + 1 < l.pts.length; i += 2) {
+				box[0] = Math.min(box[0], l.pts[i]);
+				box[1] = Math.min(box[1], l.pts[i + 1]);
+				box[2] = Math.max(box[2], l.pts[i]);
+				box[3] = Math.max(box[3], l.pts[i + 1]);
+			}
+			e = { box, byTol: new Map() };
+			this.thin.set(l.pts, e);
+		}
+		// Off screen: test the box's corners on screen (the projection may rotate, so all four).
+		const corners = [proj(l.c, e.box[0], e.box[1]), proj(l.c, e.box[2], e.box[1]), proj(l.c, e.box[0], e.box[3]), proj(l.c, e.box[2], e.box[3])];
+		if (corners.every((p) => p)) {
+			const xs = corners.map((p) => p![0]), ys = corners.map((p) => p![1]), m = 12;
+			if (Math.max(...xs) < -m || Math.min(...xs) > this.w + m || Math.max(...ys) < -m || Math.min(...ys) > this.h + m) return null;
+		}
+		if (l.pts.length < 2 * RESIMPLIFY_FROM || !(pxPerYd > 0)) return l.pts;
+		const tol = 2 ** Math.floor(Math.log2(RESIMPLIFY_PX / pxPerYd));
+		if (tol < 0.75) return l.pts; // finer than the server's own simplification already
+		let thin = e.byTol.get(tol);
+		if (!thin) e.byTol.set(tol, (thin = simplifyFlat(l.pts, tol)));
+		return thin;
+	}
+
+	private line(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null, dense: boolean) {
+		if (l.pts.length < 4) return;
 		// Screen px per world yard here (MapView's view is linear in yards).
 		const a = proj(l.c, l.pts[0], l.pts[1]), b = proj(l.c, l.pts[0] + 1, l.pts[1]);
 		const pxPerYd = a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
-		const pts = smooth(raw, SMOOTH_YD * pxPerYd);
+		const given = this.visiblePts(l, pxPerYd, proj);
+		if (!given) return;
+		const raw = this.screenPts(l.c, given, proj);
+		if (raw.length < 2) return;
+		const flight = l.style === 'flight', ghost = l.style === 'ghost', mount = l.style === 'mount';
+		// A flight is a straight guess between take-off and landing: never bent.
+		const pts = flight ? raw : smooth(raw, SMOOTH_YD * pxPerYd);
 		const ctx = this.ctx;
-		const path = () => {
+		const path = (from = 0, to = pts.length - 1) => {
 			ctx.beginPath();
-			ctx.moveTo(pts[0][0], pts[0][1]);
-			for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+			ctx.moveTo(pts[from][0], pts[from][1]);
+			for (let i = from + 1; i <= to; i++) ctx.lineTo(pts[i][0], pts[i][1]);
 		};
 		ctx.save();
 		ctx.lineJoin = 'round';
 		ctx.lineCap = 'round';
-		ctx.globalAlpha = l.faint ? 0.35 : 1;
-		if (l.ghost) ctx.setLineDash([2, 6]);
+		if (dense && !flight) {
+			// Short translucent strokes: where the trail crosses itself or comes back, they add up.
+			// Butt caps, so the joins between strokes don't stack into dots.
+			ctx.lineCap = 'butt';
+			ctx.globalAlpha = l.faint ? 0.12 : 0.34;
+			ctx.strokeStyle = l.color;
+			ctx.lineWidth = mount ? 4 : 3;
+			if (ghost) ctx.setLineDash([2, 6]);
+			for (let i = 0; i + 1 < pts.length; i += DENSE_STROKE) {
+				path(i, Math.min(i + DENSE_STROKE, pts.length - 1));
+				ctx.stroke();
+			}
+			ctx.restore();
+			return;
+		}
+		ctx.globalAlpha = (l.faint ? 0.35 : 1) * (flight ? 0.7 : 1);
+		if (ghost) ctx.setLineDash([2, 6]);
+		if (flight) ctx.setLineDash([7, 7]);
 		// casing, then the colour
 		path();
 		ctx.strokeStyle = 'rgba(8, 14, 24, 0.75)';
-		ctx.lineWidth = l.ghost ? 5 : 6;
+		ctx.lineWidth = ghost ? 5 : flight ? 4 : mount ? 8.6 : 6;
 		ctx.stroke();
 		path();
 		ctx.strokeStyle = l.color;
-		ctx.lineWidth = l.ghost ? 2.5 : 3.2;
+		ctx.lineWidth = ghost ? 2.5 : flight ? 1.8 : mount ? 5.6 : 3.2;
 		ctx.stroke();
+		if (mount) {
+			// a light stripe down the middle: mounted reads as a road, not just a wider line
+			path();
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+			ctx.lineWidth = 1.3;
+			ctx.stroke();
+		}
 		ctx.setLineDash([]);
 		// direction chevrons along the line
 		if (!l.faint) {
-			let carry = CHEVRON_EVERY / 2;
+			const every = flight ? CHEVRON_EVERY * 3 : CHEVRON_EVERY;
+			let carry = every / 2;
 			ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
 			ctx.lineWidth = 1.6;
 			for (let i = 1; i < pts.length; i++) {
@@ -267,7 +367,7 @@ export class TrailOverlay {
 					ctx.lineTo(cx + ux * 1.5, cy + uy * 1.5);
 					ctx.lineTo(cx - ux * 4 + uy * 3.5, cy - uy * 4 - ux * 3.5);
 					ctx.stroke();
-					d += CHEVRON_EVERY;
+					d += every;
 				}
 				carry = d - len;
 			}

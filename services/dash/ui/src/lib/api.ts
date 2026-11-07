@@ -49,6 +49,10 @@ export interface Segment {
 	pts: number[];
 	ts: number[];
 	ghost: boolean;
+	/** Riding a mount the whole way. */
+	mounted: boolean;
+	/** A flight: where it was taken and where it landed (the way between is not recorded). */
+	flight: boolean;
 }
 
 /** A segment with its points ready for MapView. */

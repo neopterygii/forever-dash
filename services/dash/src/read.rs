@@ -120,6 +120,11 @@ pub struct Segment {
 	pub ts: Vec<f64>,
 	/// Whether the character was dead (a ghost run).
 	pub ghost: bool,
+	/// Riding a mount (`pos` flag 1) the whole way.
+	pub mounted: bool,
+	/// A flight: two points, where the flight was taken (the last position before it) and where it
+	/// landed. The Recorder writes no positions on a taxi, so the way in between is unknown.
+	pub flight: bool,
 }
 
 /// Douglas-Peucker on (wx, wy): indices of the points kept.
@@ -157,41 +162,98 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 	let frames = frames(db)?;
 	let mut st = db.prepare("SELECT t, map, x, y, flags FROM positions WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 	let rows = st.query_map(params![char_id, from, to], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?)))?;
-	// Runs of points on one continent without long gaps or jumps, split at ghost changes.
-	let mut runs: Vec<(i64, bool, Vec<(f64, f64)>, Vec<f64>)> = Vec::new();
+	// Runs of points on one continent without long gaps or jumps, split where the character died,
+	// came back, mounted or got down (the next run starts at the last point, so the line stays whole).
+	struct Run {
+		c: i64,
+		ghost: bool,
+		mounted: bool,
+		pts: Vec<(f64, f64)>,
+		ts: Vec<f64>,
+	}
+	let mut runs: Vec<Run> = Vec::new();
 	let mut total = 0;
 	for row in rows {
 		let (t, map, x, y, flags) = row?;
 		let Some(f) = frames.get(&map) else { continue };
 		total += 1;
 		let (wx, wy) = f.world(x, y);
-		let ghost = flags & 32 != 0;
-		let cont = runs.last().is_some_and(|(c, g, p, ts)| {
-			let (lx, ly) = *p.last().unwrap();
-			*c == f.c && *g == ghost && t - ts.last().unwrap() <= TRAIL_GAP && ((wx - lx).powi(2) + (wy - ly).powi(2)).sqrt() <= TRAIL_JUMP
+		let (ghost, mounted) = (flags & 32 != 0, flags & 1 != 0 && flags & 32 == 0);
+		let near = runs.last().map(|r| {
+			let (lx, ly) = *r.pts.last().unwrap();
+			let close = ((wx - lx).powi(2) + (wy - ly).powi(2)).sqrt() <= TRAIL_JUMP;
+			(r.c == f.c && t - r.ts.last().unwrap() <= TRAIL_GAP, close, r.ghost == ghost, r.mounted == mounted)
 		});
+		let cont = near.is_some_and(|(n, close, g, m)| n && close && g && m);
 		if !cont {
-			// A ghost run starts where the body fell: carry the last point over.
-			let carry = runs.last().filter(|(c, g, _, ts)| *c == f.c && *g != ghost && t - ts.last().unwrap() <= TRAIL_GAP).map(|(_, _, p, ts)| (*p.last().unwrap(), *ts.last().unwrap()));
-			let mut run = (f.c, ghost, Vec::new(), Vec::new());
-			if let Some((p, pt)) = carry {
-				run.2.push(p);
-				run.3.push(pt);
+			let mut run = Run { c: f.c, ghost, mounted, pts: Vec::new(), ts: Vec::new() };
+			// A ghost run starts where the body fell (a release teleports: no distance check);
+			// mounting or getting down carries the last point over too.
+			if near.is_some_and(|(n, close, g, m)| n && (!g || (close && !m))) {
+				let r = runs.last().unwrap();
+				run.pts.push(*r.pts.last().unwrap());
+				run.ts.push(*r.ts.last().unwrap());
 			}
 			runs.push(run);
 		}
 		let r = runs.last_mut().unwrap();
-		r.2.push((wx, wy));
-		r.3.push(t);
+		r.pts.push((wx, wy));
+		r.ts.push(t);
 	}
-	let segs = runs
+	let mut segs: Vec<Segment> = runs
 		.into_iter()
-		.map(|(c, ghost, pts, ts)| {
-			let keep = simplify(&pts, tol);
-			Segment { c, ghost, pts: keep.iter().flat_map(|&i| [pts[i].0 as f32, pts[i].1 as f32]).collect(), ts: keep.iter().map(|&i| ts[i]).collect() }
+		.map(|r| {
+			let keep = simplify(&r.pts, tol);
+			Segment {
+				c: r.c,
+				ghost: r.ghost,
+				mounted: r.mounted,
+				flight: false,
+				pts: keep.iter().flat_map(|&i| [r.pts[i].0 as f32, r.pts[i].1 as f32]).collect(),
+				ts: keep.iter().map(|&i| r.ts[i]).collect(),
+			}
 		})
 		.collect();
+	segs.extend(flights(db, &frames, char_id, from, to)?);
+	segs.sort_by(|a, b| a.ts[0].total_cmp(&b.ts[0]));
 	Ok((segs, total))
+}
+
+/// The longest a flight can last (seconds): a `taxi` with no `land` within this was cut off.
+const FLIGHT_MAX: f64 = 30.0 * 60.0;
+
+/// Flights taken in [from, to], as two-point segments: from the last position before the `taxi`
+/// record (on the same continent, in the last TRAIL_GAP) to the `land` record's position.
+fn flights(db: &Connection, frames: &HashMap<i64, Frame>, char_id: &str, from: f64, to: f64) -> rusqlite::Result<Vec<Segment>> {
+	let mut st = db.prepare(
+		"SELECT e.t,
+		        (SELECT l.t FROM events l WHERE l.char_id = e.char_id AND l.kind = 'land' AND l.t > e.t AND l.t <= e.t + ?4 ORDER BY l.t LIMIT 1) AS lt
+		 FROM events e WHERE e.char_id = ?1 AND e.kind = 'taxi' AND e.t >= ?2 AND e.t <= ?3 ORDER BY e.t",
+	)?;
+	let taxis = st.query_map(params![char_id, from, to, FLIGHT_MAX], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, Option<f64>>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+	let mut out = Vec::new();
+	for (t, lt) in taxis {
+		let Some(lt) = lt else { continue };
+		// No second `taxi` in between: that one owns the landing.
+		let between: i64 = db.query_row("SELECT COUNT(*) FROM events WHERE char_id = ?1 AND kind = 'taxi' AND t > ?2 AND t < ?3", params![char_id, t, lt], |r| r.get(0))?;
+		if between > 0 {
+			continue;
+		}
+		let land = db.query_row("SELECT map, x, y FROM events WHERE char_id = ?1 AND kind = 'land' AND t = ?2", params![char_id, lt], |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?)));
+		let start = db
+			.query_row("SELECT t, map, x, y FROM positions WHERE char_id = ?1 AND t <= ?2 AND t >= ?3 ORDER BY t DESC LIMIT 1", params![char_id, t, t - TRAIL_GAP], |r| {
+				Ok((r.get::<_, f64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+			})
+			.ok();
+		let (Ok((Some(lm), Some(lx), Some(ly))), Some((st_t, sm, sx, sy))) = (land, start) else { continue };
+		let (Some(fa), Some(fb)) = (frames.get(&sm), frames.get(&lm)) else { continue };
+		if fa.c != fb.c {
+			continue;
+		}
+		let ((ax, ay), (bx, by)) = (fa.world(sx, sy), fb.world(lx, ly));
+		out.push(Segment { c: fa.c, ghost: false, mounted: false, flight: true, pts: vec![ax as f32, ay as f32, bx as f32, by as f32], ts: vec![st_t.max(t - 1.0), lt] });
+	}
+	Ok(out)
 }
 
 /// A quest's title: as the character saw it (`text` records), else Polestar's reference data.
@@ -774,5 +836,34 @@ mod quest_text_tests {
 		assert_eq!(pretty_token("WARRIOR"), "Warrior");
 		assert_eq!(pretty_token("NightElf"), "Night Elf");
 		assert_eq!(pretty_token("Scourge"), "Undead");
+	}
+
+	#[test]
+	fn trail_splits_at_mounting_and_draws_flights() {
+		let db = crate::db::open(":memory:").unwrap();
+		// One map, 10000 x 10000 units = 1000 x 1000 yards.
+		db.execute("INSERT INTO maps (id, type, parent, c, top, left, bottom, right) VALUES (1, 3, 0, 0, 0, 0, 1000, 1000)", []).unwrap();
+		let pos = |t: f64, x: i64, flags: i64| db.execute("INSERT INTO positions VALUES ('a', ?1, 1, ?2, 5000, ?3)", params![t, x, flags]).unwrap();
+		// on foot, then mounted, then on foot again: three runs sharing their end points
+		for i in 0..4 {
+			pos(i as f64 * 5.0, 1000 + i * 100, 0);
+		}
+		for i in 4..8 {
+			pos(i as f64 * 5.0, 1000 + i * 100, 1);
+		}
+		pos(40.0, 1800, 0);
+		// a flight from the last position to a landing far away, then walking on from there
+		db.execute("INSERT INTO events VALUES ('a', 45, 'taxi', NULL, NULL, NULL, '[1,2]')", []).unwrap();
+		db.execute("INSERT INTO events VALUES ('a', 200, 'land', 1, 9000, 9000, '[2,155]')", []).unwrap();
+		pos(205.0, 9000, 0);
+		let (segs, total) = trail(&db, "a", 0.0, 1e9, 0.0).unwrap();
+		assert_eq!(total, 10);
+		let kinds: Vec<(bool, bool, usize)> = segs.iter().map(|s| (s.mounted, s.flight, s.ts.len())).collect();
+		assert_eq!(kinds, vec![(false, false, 4), (true, false, 5), (false, false, 2), (false, true, 2), (false, false, 1)]);
+		// the mounted run starts where walking ended
+		assert_eq!(segs[1].pts[..2], segs[0].pts[6..8]);
+		let f = &segs[3];
+		assert_eq!(f.ts, vec![44.0, 200.0]);
+		assert_eq!(f.pts, vec![500.0, 180.0, 900.0, 900.0]);
 	}
 }
