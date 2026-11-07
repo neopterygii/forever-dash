@@ -14,6 +14,70 @@ export interface OverlayLine {
 	faint: boolean;
 	ghost: boolean;
 }
+/** How far (world yards) a smoothed trail may bow away from the straight line between two recorded points. */
+export const SMOOTH_YD = 3;
+/** Turns sharper than this (radians between the way in and the way out) stay corners: a real turnaround. */
+const SHARP_TURN = (100 * Math.PI) / 180;
+
+/**
+ * Rounds a trail's corners without moving it: the curve passes through every point it was given
+ * (centripetal Catmull-Rom, which neither loops nor overshoots like the uniform kind), and each
+ * piece between two points stays within `maxDev` px of the straight line between them (a Bezier
+ * lies within its control points, which are clamped to that band and to half the piece's length).
+ * Sharp turns stay sharp. Returned as a polyline (each piece in steps of about 4 px), so the
+ * stroke and the direction chevrons follow the same line. maxDev < 0.5 px: the points as given.
+ */
+export function smooth(p: [number, number][], maxDev: number): [number, number][] {
+	if (p.length < 3 || !(maxDev >= 0.5)) return p;
+	const out: [number, number][] = [p[0]];
+	const dist = (u: [number, number], v: [number, number]) => Math.hypot(v[0] - u[0], v[1] - u[1]);
+	const turn = (u: [number, number], v: [number, number], w: [number, number]) => {
+		const a1 = Math.atan2(v[1] - u[1], v[0] - u[0]), a2 = Math.atan2(w[1] - v[1], w[0] - v[0]);
+		return Math.abs(((a2 - a1 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+	};
+	// The control point next to `from` on the piece from -> to, pulled back into the band.
+	const clamp = (c: [number, number], from: [number, number], to: [number, number]): [number, number] => {
+		const len = dist(from, to);
+		if (len < 1e-6) return from;
+		const ux = (to[0] - from[0]) / len, uy = (to[1] - from[1]) / len;
+		let vx = c[0] - from[0], vy = c[1] - from[1];
+		const along = vx * ux + vy * uy;
+		if (along <= 0) return from; // pointing backwards: no rounding here
+		const perp = Math.abs(-vx * uy + vy * ux);
+		let k = 1;
+		if (perp > maxDev) k = Math.min(k, maxDev / perp);
+		if (Math.hypot(vx, vy) * k > len / 2) k = Math.min(k, len / 2 / Math.hypot(vx, vy));
+		vx *= k;
+		vy *= k;
+		return [from[0] + vx, from[1] + vy];
+	};
+	for (let i = 0; i + 1 < p.length; i++) {
+		const p1 = p[i], p2 = p[i + 1];
+		const p0 = p[i - 1] ?? p1, p3 = p[i + 2] ?? p2;
+		const d1 = Math.sqrt(dist(p0, p1)), d2 = Math.sqrt(dist(p1, p2)), d3 = Math.sqrt(dist(p2, p3));
+		if (d2 < 1e-6) continue;
+		let c1: [number, number] = p1, c2: [number, number] = p2;
+		if (d1 > 1e-6 && turn(p0, p1, p2) < SHARP_TURN) {
+			const k = 3 * d1 * (d1 + d2), a = 2 * d1 * d1 + 3 * d1 * d2 + d2 * d2;
+			c1 = clamp([(d1 * d1 * p2[0] - d2 * d2 * p0[0] + a * p1[0]) / k, (d1 * d1 * p2[1] - d2 * d2 * p0[1] + a * p1[1]) / k], p1, p2);
+		}
+		if (d3 > 1e-6 && turn(p1, p2, p3) < SHARP_TURN) {
+			const k = 3 * d3 * (d3 + d2), a = 2 * d3 * d3 + 3 * d3 * d2 + d2 * d2;
+			c2 = clamp([(d3 * d3 * p1[0] - d2 * d2 * p3[0] + a * p2[0]) / k, (d3 * d3 * p1[1] - d2 * d2 * p3[1] + a * p2[1]) / k], p2, p1);
+		}
+		const straight = c1 === p1 && c2 === p2;
+		const n = straight ? 1 : Math.min(24, Math.max(2, Math.ceil(dist(p1, p2) / 4)));
+		for (let j = 1; j <= n; j++) {
+			const t = j / n, m = 1 - t;
+			out.push([
+				m * m * m * p1[0] + 3 * m * m * t * c1[0] + 3 * m * t * t * c2[0] + t * t * t * p2[0],
+				m * m * m * p1[1] + 3 * m * m * t * c1[1] + 3 * m * t * t * c2[1] + t * t * t * p2[1],
+			]);
+		}
+	}
+	return out;
+}
+
 export interface OverlayEvent {
 	c: number;
 	wx: number;
@@ -158,8 +222,12 @@ export class TrailOverlay {
 	}
 
 	private line(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
-		const pts = this.screenPts(l, proj);
-		if (pts.length < 2) return;
+		const raw = this.screenPts(l, proj);
+		if (raw.length < 2) return;
+		// Screen px per world yard here (MapView's view is linear in yards).
+		const a = proj(l.c, l.pts[0], l.pts[1]), b = proj(l.c, l.pts[0] + 1, l.pts[1]);
+		const pxPerYd = a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+		const pts = smooth(raw, SMOOTH_YD * pxPerYd);
 		const ctx = this.ctx;
 		const path = () => {
 			ctx.beginPath();

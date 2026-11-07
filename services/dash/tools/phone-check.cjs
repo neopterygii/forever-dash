@@ -78,9 +78,9 @@ async function measure(page) {
 // The views, in order; each step leaves the page in the state it names.
 const VIEWS = [
 	['overview', async () => {}],
-	['overview-journal', async (p) => { await p.locator('button.jt').click(); }],
-	['focus', async (p) => { await p.locator('button.jt').click(); await p.locator('.chars button.main').first().click(); }],
-	['focus-journal', async (p) => { await p.locator('button.jt').click(); }],
+	['overview-journal', async (p) => { await p.locator('button.jt:not(.pt)').click(); }],
+	['focus', async (p) => { await p.locator('button.jt:not(.pt)').click(); await p.locator('.chars button.main').first().click(); }],
+	['focus-journal', async (p) => { await p.locator('button.jt:not(.pt)').click(); }],
 	['focus-journal-log-quest', async (p) => {
 		const art = p.locator('.journal article').filter({ has: p.locator('.logt') }).first();
 		await art.locator('.logt').click();
@@ -96,6 +96,25 @@ const VIEWS = [
 	}],
 	['sheet-bags', async (p) => { await p.locator('[role=dialog] button, .sheet button', { hasText: 'Bags' }).first().click().catch(() => {}); }],
 	['sheet-stats', async (p) => { await p.locator('[role=dialog] button, .sheet button', { hasText: 'Stats' }).first().click().catch(() => {}); }],
+	['people', async (p) => {
+		await p.locator('[role=dialog] button.close').first().click().catch(() => {});
+		await p.locator('button.pt').click();
+		// The selected character may have met nobody: everyone's.
+		const all = p.locator('[role=dialog] nav button', { hasText: "Everyone's" });
+		if (await all.count()) await all.click();
+	}],
+	['person', async (p) => { await p.locator('[role=dialog] .row').first().click(); }],
+	['journal-person', async (p) => {
+		await p.locator('[role=dialog] button.close').first().click();
+		const back = p.locator('button.back', { hasText: 'All characters' });
+		if (await back.count()) await back.click();
+		await p.locator('button.jt:not(.pt)').click();
+		await p.waitForTimeout(500);
+		const logs = p.locator('.journal .logt');
+		for (let i = 0; i < Math.min(3, await logs.count()); i++) await logs.nth(i).click();
+		const pp = p.locator('.journal button.pp').first();
+		if (await pp.count()) await pp.scrollIntoViewIfNeeded();
+	}],
 ];
 
 (async () => {

@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Polestar Dash Snapshot
-## Notes: forever-dash: saves this character's gear, bags, bank and gold for the self-hosted dashboard.
+## Notes: forever-dash: saves this character's gear, bags, bank, gold and the players it meets for the self-hosted dashboard.
 ## Author: Polestar; forever-dash
 ## X-License: GPL-3.0-only
 ## Version: 0.0.0
@@ -10,3 +10,4 @@
 ## OptionalDeps: Polestar
 
 Snapshot.lua
+People.lua

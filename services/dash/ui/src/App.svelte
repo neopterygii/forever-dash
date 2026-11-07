@@ -6,6 +6,7 @@
 	import MapPane from './components/MapPane.svelte';
 	import Journal from './components/Journal.svelte';
 	import CharacterSheet from './components/CharacterSheet.svelte';
+	import People from './components/People.svelte';
 
 	onMount(() => {
 		dash.run(dash.load());
@@ -16,7 +17,7 @@
 
 	/** Esc leaves the selected character (after the character sheet, which closes first). */
 	function onkey(e: KeyboardEvent) {
-		if (e.key !== 'Escape' || e.defaultPrevented || dash.sheet || dash.mode !== 'focus') return;
+		if (e.key !== 'Escape' || e.defaultPrevented || dash.sheet || dash.people || dash.mode !== 'focus') return;
 		const t = e.target as HTMLElement | null;
 		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
 		dash.run(dash.leaveFocus());
@@ -38,6 +39,9 @@
 				<button class="back" title="Back to all characters (Esc)" onclick={() => dash.run(dash.leaveFocus())}><i></i>All characters</button>
 			{/if}
 			<span class="who">{who}</span>
+			<button class="jt pt" class:on={!!dash.people} aria-pressed={!!dash.people} onclick={() => (dash.people = dash.people ? null : { who: null })}>
+				<img src="/glyph/character.png" alt="" />People
+			</button>
 			<button class="jt" class:on={dash.journalOpen} aria-pressed={dash.journalOpen} onclick={() => (dash.journalOpen = !dash.journalOpen)}>
 				<img src="/glyph/guides.png" alt="" />Journal
 			</button>
@@ -49,6 +53,7 @@
 	</main>
 </div>
 <CharacterSheet />
+<People />
 <svelte:window onkeydown={onkey} />
 {#if dash.error}<pre class="error">{dash.error}</pre>{/if}
 

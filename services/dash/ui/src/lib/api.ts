@@ -69,6 +69,9 @@ export interface DashEvent {
 	pos: Pos | null;
 	/** On accept, turn-in, abandon and fail lines. */
 	quest?: { id: number; level: number | null; audio: Narration | null } | null;
+	/** On a meeting with another player (kind `met`): how, and who ("Name-Realm"). */
+	how?: string;
+	person?: string;
 }
 
 export interface JournalPage {
@@ -198,6 +201,50 @@ export interface Snapshot {
 	bank: Container[] | null;
 }
 
+/** How a player was met (Polestar_DashSnapshot's People.lua). */
+export type How = 'group' | 'trade' | 'duel' | 'seen' | 'fought' | 'killedby' | 'killed';
+
+/** A player one of our characters met, as last seen in game, with your rating and notes. */
+export interface Person {
+	who: string;
+	name: string;
+	realm: string | null;
+	class: string | null;
+	race: string | null;
+	sex: number | null;
+	level: number | null;
+	guild: string | null;
+	faction: string | null;
+	seen: number | null;
+	rating: number | null;
+	note: string | null;
+	/** Our own character this is, when it is one. */
+	ours: string | null;
+}
+
+export interface PersonRow extends Person {
+	first: number;
+	last: number;
+	count: number;
+	hows: Partial<Record<How, number>>;
+	/** Our characters that met them. */
+	chars: string[];
+}
+
+export interface Meeting {
+	char: string;
+	t: number;
+	how: How;
+	note: string | null;
+	text: string;
+	zone: string | null;
+	pos: Pos | null;
+}
+
+export interface PersonDetail extends Person {
+	met: Meeting[];
+}
+
 export interface Stats {
 	chunks: number;
 	positions: number;
@@ -232,6 +279,14 @@ export const api = {
 	setDiary: async (char: string, start: number, text: string) => {
 		const r = await fetch('/api/diary', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, start, text }) });
 		if (!r.ok) throw new Error(`diary: ${r.status}`);
+	},
+	/** Everyone met, by one character or by any. */
+	people: (char?: string) => get<PersonRow[]>(`/api/people?${q(char ? { char } : {})}`),
+	person: (who: string) => get<PersonDetail | null>(`/api/person?${q({ who })}`),
+	/** Your rating (1-5, 0 clears) and notes for a player. */
+	setPerson: async (who: string, rating: number, note: string) => {
+		const r = await fetch('/api/person', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ who, rating, note }) });
+		if (!r.ok) throw new Error(`person: ${r.status}`);
 	},
 	addNote: async (char: string, t: number, text: string) => {
 		const r = await fetch('/api/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ char, t, text }) });

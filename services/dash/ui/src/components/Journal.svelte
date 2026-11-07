@@ -65,7 +65,7 @@
 		}
 	}
 
-	type Item = { t: number; kind: string; text: string; pos?: Pos | null; quest?: DashEvent['quest'] };
+	type Item = { t: number; kind: string; text: string; pos?: Pos | null; quest?: DashEvent['quest']; how?: string; person?: string };
 	const qkey = (s: Session, e: Item) => `${s.char}:${e.t}:${e.quest?.id}`;
 	const toggleQuest = (s: Session, e: Item) => (openQuest = openQuest === qkey(s, e) ? null : qkey(s, e));
 	const items = (s: Session): Item[] => [...s.events, ...s.notes.map((n) => ({ t: n.t, kind: 'note', text: n.text }))].sort((a, b) => b.t - a.t); // newest first, as the sessions
@@ -170,9 +170,10 @@
 				{#if logOpen[sessionKey(s)]}
 				<ul class="events">
 					{#each items(s) as e, j (j)}
-						<li class="k-{e.kind}">
+						<li class="k-{e.kind}{e.how ? ` h-${e.how}` : ''}">
 							<button class="ev" onclick={() => dash.run(replay(s, e))}><time>{hhmm(e.t)}</time><b class="ji"></b><span>{e.text}</span></button>
 							{#if e.quest?.audio}<NarrationButton line={e.quest.audio} />{/if}
+							{#if e.person}{@const who = e.person}<button class="pp" aria-label="About {who}" title="About this player" onclick={() => (dash.people = { who })}><i></i></button>{/if}
 							{#if e.quest}
 								<button class="qt" class:on={openQuest === qkey(s, e)} aria-expanded={openQuest === qkey(s, e)} aria-label="Quest details" title="Quest details" onclick={() => toggleQuest(s, e)}><i></i></button>
 							{/if}
@@ -236,6 +237,10 @@
 	.qt:focus-visible { outline: 1px solid var(--focus); }
 	.qt i { width: 12px; height: 12px; background: currentColor; mask: url(/glyph/chevron-down.png) center / contain no-repeat; -webkit-mask: url(/glyph/chevron-down.png) center / contain no-repeat; transition: transform 0.12s; }
 	.qt.on i { transform: rotate(180deg); }
+	.pp { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; background: none; color: var(--textMuted); cursor: pointer; padding: 0; }
+	.pp:hover { background: var(--chip); color: var(--text); }
+	.pp:focus-visible { outline: 1px solid var(--focus); }
+	.pp i { width: 12px; height: 12px; background: currentColor; mask: url(/glyph/character.png) center / contain no-repeat; -webkit-mask: url(/glyph/character.png) center / contain no-repeat; }
 	.older { display: block; width: 100%; margin: 0 0 10px; padding: 8px; border: 1px dashed var(--border); border-radius: 10px; background: none; color: var(--accent); font-weight: 600; cursor: pointer; }
 	.older:disabled { color: var(--textDim); cursor: default; }
 	.end { text-align: center; color: var(--textMuted); font-size: 12px; margin: 4px 0 12px; }
@@ -246,7 +251,8 @@
 	.k-accept .ji, .k-turnin .ji { background: var(--quest); }
 	.k-mark .ji, .k-note .ji { background: var(--accent); }
 	.k-fail .ji, .k-abandon .ji { background: var(--quest); opacity: 0.5; }
-	.k-group .ji { background: var(--accent); border-radius: 2px; }
+	.k-group .ji, .k-met .ji { background: var(--accent); border-radius: 2px; }
+	.h-fought .ji, .h-killedby .ji, .h-killed .ji { background: var(--danger); }
 	/* Milestones (a first, a round number): a star, and the line a little stronger. */
 	.k-milestone .ji { width: 12px; height: 12px; border-radius: 0; background: var(--accent); mask: url(/glyph/star.png) center / contain no-repeat; -webkit-mask: url(/glyph/star.png) center / contain no-repeat; }
 	.k-milestone span { font-weight: 600; color: var(--accent); }

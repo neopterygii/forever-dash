@@ -93,6 +93,12 @@ pub struct Facts {
 	pub raid: i64,
 	/// The dashboard's other characters grouped with me at the same time.
 	pub played_with: Vec<String>,
+	/// Other players (People.lua): grouped with, duels (name, won), fights.
+	pub grouped_with: Vec<String>,
+	pub duels: Vec<(String, bool)>,
+	pub players_killed: Vec<String>,
+	pub killed_by_players: Vec<String>,
+	pub attacked_by: Vec<String>,
 }
 
 fn local_tz() -> chrono_tz::Tz {
@@ -257,6 +263,18 @@ pub fn facts(db: &Connection, char_id: &str, start: f64, end: f64) -> rusqlite::
 	f.party = gs.party;
 	f.raid = gs.raid;
 	f.played_with = gs.with.into_iter().map(|w| w.1).collect();
+	for m in crate::people::between(db, char_id, start, end + 60.0)? {
+		let name = m.name.clone();
+		match m.how.as_str() {
+			// Our own characters are already in played_with (by their full name).
+			"group" if !f.played_with.iter().any(|p| p.split(' ').next() == Some(name.as_str())) => push_unique(&mut f.grouped_with, name),
+			"duel" => f.duels.push((name, m.note.as_deref() == Some("won"))),
+			"killed" => push_unique(&mut f.players_killed, name),
+			"killedby" => push_unique(&mut f.killed_by_players, name),
+			"fought" => push_unique(&mut f.attacked_by, name),
+			_ => {}
+		}
+	}
 	f.firsts = crate::milestones::between(&crate::milestones::all(db, char_id)?, start, end).into_iter().map(|m| m.phrase).collect();
 	// A quest both taken and handed in is told once, as done.
 	f.quests_taken.retain(|q| !f.quests_done.contains(q) && !f.quests_failed.contains(q));
@@ -421,6 +439,9 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	if let Some(s) = company(f) {
 		out.push(s);
 	}
+	if let Some(s) = rivals(f) {
+		out.push(s);
+	}
 	// Fighting.
 	if f.kills > 0 {
 		let foes: Vec<String> = f.foes.iter().take(2).map(|(n, c)| if *c > 1 { plural(n) } else { n.clone() }).collect();
@@ -493,21 +514,56 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	out.join(" ")
 }
 
+/// Everyone I grouped with by name: our own characters first, then the others met (People.lua).
+fn companions(f: &Facts) -> Vec<String> {
+	let mut v = f.played_with.clone();
+	for n in &f.grouped_with {
+		push_unique(&mut v, n.clone());
+	}
+	v
+}
+
 /// Who I was with: "I spent most of it with Rena", "For a while I travelled with a party of three."
 fn company(f: &Facts) -> Option<String> {
+	let with = companions(f);
 	if f.grouped_minutes < 3 {
-		return None;
+		// A group the Recorder's records don't show (an older Recorder), but People.lua saw.
+		return (!f.grouped_with.is_empty()).then(|| format!("I joined up with {} for a time.", some(&f.grouped_with, 3, false)));
 	}
 	let most = f.grouped_minutes * 3 >= f.minutes * 2;
 	let how_long = if most { "most of it" } else { "a while" };
 	let group = if f.raid > 0 { format!("a raid of {}", count(f.raid)) } else { format!("a party of {}", count(f.party + 1)) };
-	Some(if !f.played_with.is_empty() {
-		format!("I spent {how_long} with {}.", list(&f.played_with))
+	Some(if !with.is_empty() {
+		format!("I spent {how_long} with {}.", some(&with, 4, false))
 	} else if most {
 		format!("I travelled with {group} for most of it.")
 	} else {
 		format!("For a while I travelled with {group}.")
 	})
+}
+
+/// Duels and fights with other players: "I bested Thoren in a duel. Gruk ambushed me and won."
+fn rivals(f: &Facts) -> Option<String> {
+	let mut out = Vec::new();
+	let won: Vec<String> = f.duels.iter().filter(|d| d.1).map(|d| d.0.clone()).collect();
+	let lost: Vec<String> = f.duels.iter().filter(|d| !d.1).map(|d| d.0.clone()).collect();
+	let uniq = |v: Vec<String>| v.into_iter().fold(Vec::new(), |mut a, n| { push_unique(&mut a, n); a });
+	let (won, lost) = (uniq(won), uniq(lost));
+	if !won.is_empty() {
+		out.push(format!("I bested {} in a duel.", list(&won)));
+	}
+	if !lost.is_empty() {
+		out.push(format!("{} got the better of me in a duel.", list(&lost)));
+	}
+	if !f.killed_by_players.is_empty() {
+		out.push(format!("{} cut me down.", list(&f.killed_by_players)));
+	} else if !f.attacked_by.is_empty() {
+		out.push(format!("{} came at me.", list(&f.attacked_by)));
+	}
+	if !f.players_killed.is_empty() {
+		out.push(format!("I slew {}.", list(&f.players_killed)));
+	}
+	(!out.is_empty()).then(|| out.join(" "))
 }
 
 /// "gathered twelve herbs, mined five veins and picked a lock", or None.
@@ -589,9 +645,12 @@ fn prompt_facts(f: &Facts) -> Value {
 	if f.grouped_minutes >= 3 {
 		let group = if f.raid > 0 { format!("a raid of {}", f.raid) } else { format!("a party of {}", f.party + 1) };
 		let mut c = json!({ "for": duration(f.grouped_minutes), "in": group });
-		if !f.played_with.is_empty() { c["with"] = json!(f.played_with); }
+		let with = companions(f);
+		if !with.is_empty() { c["with"] = json!(with); }
 		put("had_company", c);
 	}
+	if f.grouped_minutes < 3 && !f.grouped_with.is_empty() { put("had_company", json!({ "with": f.grouped_with })); }
+	if let Some(r) = rivals(f) { put("other_adventurers", json!(r)); }
 	if let Some(g) = gathering(f) { put("gathered", json!(g)); }
 	if f.kills > 0 {
 		let foes: Vec<String> = f.foes.iter().take(3).map(|(n, c)| if *c > 1 { plural(n) } else { n.clone() }).collect();
@@ -798,6 +857,20 @@ mod tests {
 			yards_walked: 11280,
 			..Default::default()
 		}
+	}
+
+	#[test]
+	fn other_players_are_named() {
+		let mut f = meera();
+		f.grouped_minutes = 100;
+		f.party = 2;
+		f.played_with = vec!["Corwyn Ashvale".into()];
+		f.grouped_with = vec!["Ana".into()];
+		f.duels = vec![("Thoren".into(), true), ("Thoren".into(), true)];
+		f.killed_by_players = vec!["Gruk".into()];
+		let t = template(&f, 7);
+		assert!(t.contains("with Corwyn Ashvale and Ana."), "{t}");
+		assert!(t.contains("I bested Thoren in a duel. Gruk cut me down."), "{t}");
 	}
 
 	#[test]

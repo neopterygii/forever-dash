@@ -91,6 +91,8 @@ class Dash {
 	focusPoint = $state.raw<{ c: number; wx: number; wy: number } | null>(null);
 	/** The character sheet window: whose, and gear or bags. */
 	sheet = $state<{ id: string; view: 'gear' | 'bags' | 'stats' } | null>(null);
+	/** The People window: open with the list (who null) or one player's card. */
+	people = $state<{ who: string | null } | null>(null);
 	/** Bumped to ask the map to fit its view to what is loaded. */
 	fitRequest = $state(0);
 	error = $state<string | null>(null);

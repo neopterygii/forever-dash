@@ -24,6 +24,7 @@ mod group;
 mod ingest;
 mod milestones;
 mod names;
+mod people;
 mod read;
 mod spoken;
 
@@ -205,6 +206,41 @@ async fn set_diary(State(db): State<Db>, Json(d): Json<DiaryBody>) -> Response {
 	}
 }
 
+#[derive(Deserialize)]
+struct PeopleQ {
+	/// Met by one character; none = by any.
+	char: Option<String>,
+}
+
+async fn people_list(State(db): State<Db>, Query(q): Query<PeopleQ>) -> Response {
+	people::list(&db.lock().unwrap(), q.char.as_deref().filter(|c| !c.is_empty())).map(Json).map_or_else(err500, IntoResponse::into_response)
+}
+
+#[derive(Deserialize)]
+struct PersonQ {
+	who: String,
+}
+
+async fn person(State(db): State<Db>, Query(q): Query<PersonQ>) -> Response {
+	people::person(&db.lock().unwrap(), &q.who).map(Json).map_or_else(err500, IntoResponse::into_response)
+}
+
+#[derive(Deserialize)]
+struct PersonBody {
+	who: String,
+	/// 1-5; 0 or none clears it.
+	rating: Option<i64>,
+	#[serde(default)]
+	note: String,
+}
+
+async fn set_person(State(db): State<Db>, Json(b): Json<PersonBody>) -> Response {
+	match people::set_note(&db.lock().unwrap(), &b.who, b.rating, &b.note) {
+		Ok(()) => Json(json!({ "ok": true })).into_response(),
+		Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+	}
+}
+
 async fn stats(State(db): State<Db>) -> Response {
 	let db = db.lock().unwrap();
 	let count = |sql: &str| db.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(-1);
@@ -266,6 +302,8 @@ async fn serve(args: &[String]) {
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
 		.route("/api/diary", post(set_diary))
+		.route("/api/people", get(people_list))
+		.route("/api/person", get(person).post(set_person))
 		.route("/api/stats", get(stats))
 		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
 		.nest_service("/art", ServeDir::new(art).precompressed_gzip())

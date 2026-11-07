@@ -37,6 +37,8 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   Everything is kept; only the map is limited to a playtime buffer.
 - Map: overview of all characters (default 6 h of play each), or one character in focus (default
   its last session, up to all play), scrubbed over playtime (offline gaps skipped).
+  Trails are drawn with their corners rounded (`smooth`, `ui/src/lib/overlay.ts`) through every kept
+  point and never more than 3 yards off the straight line between two of them; sharp turns stay corners.
 - Web (`ui/`): Svelte 5 + TypeScript + Vite, the same stack and versions as Polestar Client
   (`apps/client`). It bundles MapView from this fork's `tools/planner/public/map/` and takes
   Polestar's design tokens and fonts from the planner's stylesheet at build time
@@ -65,9 +67,19 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   locks picked (`gather`), in its facts and its diary entry; `fail` records show as "Failed “…”" in the
   log and in the diary. `group`, `gather` and `fail` are stored since this change: `reparse` to fill
   them in from the raw chunks.
+- **People met** (`src/people.rs`, from Polestar_DashSnapshot's `People.lua`): players a character
+  grouped, traded or duelled with, fought (attacked by, killed, killed by; not in battlegrounds), or
+  targeted / moused over long enough to matter, with their class, race, level and guild as last seen
+  and where each meeting was. The upload pulls `people` and `met` out of the snapshot into their own
+  tables (`people`, `met`, every meeting kept). `GET /api/people?char=`, `GET /api/person?who=`,
+  `POST /api/person` (`{ who, rating 1-5 or 0, note }`): your rating and notes per player. The
+  journal's log lists meetings (not `seen`) with a button to the player's card; the top bar's People
+  opens the list. Unit identity is secret in combat on Forever: fights name a player only when they
+  were read before or after (best effort). Ours only, never relayed upstream.
 - **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with
   sample data and run `node tools/phone-check.cjs http://127.0.0.1:8799 <out dir>`. It opens every view
-  (overview, a character, both journals with a quest card, diary editing, gear, bags and stats) at 390x844
+  (overview, a character, both journals with a quest card, diary editing, gear, bags and stats, people,
+  a person's card and a log with a meeting) at 390x844
   and 360x780 as a touch phone, saves a screenshot of each and fails on sideways scrolling, anything past
   the screen's edge and console or request errors (a missing item icon is expected); it lists tap targets
   under 32 px. Then look at the screenshots. Touch sizes come from one rule in `ui/src/app.css`

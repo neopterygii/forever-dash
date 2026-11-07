@@ -20,6 +20,7 @@
 --                                   client's token: MANA, RAGE, ENERGY...), the five attributes and
 --                                   armor as the character sheet shows them (with gear and buffs)
 --   equipAt, bagsAt, bankAt, moneyAt, statsAt  server time of each part's last read
+--   people, met, peopleAt           the players met: People.lua
 --
 -- When it reads: in the world, five seconds after entering it; then on equipment, bag, money and
 -- bank changes (coalesced, one second). NOTHING on PLAYER_LEAVING_WORLD or PLAYER_LOGOUT: the client

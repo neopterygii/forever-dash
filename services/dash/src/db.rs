@@ -114,6 +114,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
 	db.execute_batch(crate::names::SCHEMA)?;
 	db.execute_batch(crate::spoken::SCHEMA)?;
 	db.execute_batch(crate::diary::SCHEMA)?;
+	db.execute_batch(crate::people::SCHEMA)?;
 	for (table, column, ty) in ADDED {
 		let has: bool = db.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
 		if !has {

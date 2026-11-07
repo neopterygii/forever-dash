@@ -43,7 +43,7 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q lua5.1
 
       - name: Snapshot addon tests
-        run: lua5.1 services/dash/addon-test/snapshot_test.lua
+        run: lua5.1 services/dash/addon-test/snapshot_test.lua && lua5.1 services/dash/addon-test/people_test.lua
 
       - name: Which release
         id: which

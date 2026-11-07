@@ -140,8 +140,14 @@ pub fn upload(db: &mut Connection, req: &DashUpload, now: i64) -> Result<UploadR
 		}
 	}
 	for (char_id, snap) in &req.snapshots {
-		let Some(saved) = snapshot_saved(snap).filter(|_| valid_char_id(char_id)) else { continue };
+		if !valid_char_id(char_id) {
+			continue;
+		}
 		tx.execute("INSERT OR IGNORE INTO characters (char_id) VALUES (?1)", [char_id]).map_err(|e| e.to_string())?;
+		// The people met (People.lua) are kept in their own tables, not in every snapshot row.
+		let (snap, people, met) = crate::people::split(snap);
+		crate::people::store(&tx, char_id, people.as_ref(), met.as_ref()).map_err(|e| e.to_string())?;
+		let Some(saved) = snapshot_saved(&snap) else { continue };
 		tx.execute("INSERT OR REPLACE INTO snapshots (char_id, saved, json) VALUES (?1, ?2, ?3)", params![char_id, saved, snap.to_string()]).map_err(|e| e.to_string())?;
 	}
 	for (char_id, alt) in &req.alts {

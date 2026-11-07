@@ -40,7 +40,7 @@ pub fn frames(db: &Connection) -> rusqlite::Result<HashMap<i64, Frame>> {
 	rows.collect()
 }
 
-fn world_of(frames: &HashMap<i64, Frame>, map: Option<i64>, x: Option<i64>, y: Option<i64>) -> Value {
+pub(crate) fn world_of(frames: &HashMap<i64, Frame>, map: Option<i64>, x: Option<i64>, y: Option<i64>) -> Value {
 	match (map.and_then(|m| frames.get(&m)), x, y) {
 		(Some(f), Some(x), Some(y)) => {
 			let (wx, wy) = f.world(x, y);
@@ -447,6 +447,12 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 					e["quest"] = quest_of(db, &kind, &f, sex).unwrap_or(Value::Null);
 				}
 				events.push(e);
+			}
+		}
+		// Meetings with other players (People.lua), as log lines with the person to open.
+		for m in crate::people::between(db, char_id, start, end + 60.0)? {
+			if let Some(text) = crate::people::line(&m) {
+				events.push(json!({ "t": m.t, "kind": "met", "how": m.how, "person": m.who, "text": text, "pos": world_of(&frames, m.map, m.x, m.y) }));
 			}
 		}
 		// The session's milestones, as log lines of their own.

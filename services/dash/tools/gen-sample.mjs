@@ -99,7 +99,39 @@ function snapshotOf(ch) {
 	for (const [slot, id] of Object.entries(ch.kit.equip)) d.equip[slot] = `item:${id}:0:0:0:0:0:0:0:${ch.level}:::::`;
 	if (ch.kit.bank) Object.assign(d, { bank: bags(ch.kit.bank), bankAt: at - 7200 });
 	if (ch.kit.stats) Object.assign(d, { stats: ch.kit.stats, statsAt: at });
+	if (ch.spans?.length) Object.assign(d, peopleOf(ch));
 	return d;
+}
+// People.lua's `people` and `met`: strangers met in the character's sessions (and Corwyn, one of ours).
+const PEOPLE = {
+	'Ana-Dashrealm': { name: 'Ana', realm: 'Dashrealm', class: 'PRIEST', race: 'Human', sex: 3, level: 6, guild: 'Dawnwatch', faction: 'Alliance' },
+	'Thoren-Dashrealm': { name: 'Thoren', realm: 'Dashrealm', class: 'PALADIN', race: 'Dwarf', sex: 2, level: 7, faction: 'Alliance' },
+	'Gruk-Otherrealm': { name: 'Gruk', realm: 'Otherrealm', class: 'ROGUE', race: 'Orc', sex: 2, level: 9, guild: 'Blood Moon', faction: 'Horde' },
+	'Mirelle-Dashrealm': { name: 'Mirelle', realm: 'Dashrealm', class: 'MAGE', race: 'Gnome', sex: 3, level: 5, faction: 'Alliance' },
+	'Corwyn-Dashrealm': { name: 'Corwyn', realm: 'Dashrealm', class: 'DRUID', race: 'NightElf', sex: 2, level: 5, faction: 'Alliance' },
+};
+function peopleOf(ch) {
+	const met = [];
+	const at = (span, dt, who, how, note) => {
+		const [a, b, [map, x, y]] = span;
+		const t = Math.min(b - 1, a + dt);
+		met.push(Object.assign({ t, who, how, map, x: Math.round(x * 100), y: Math.round(y * 100) }, note ? { note } : {}));
+	};
+	ch.spans.forEach((sp, i) => {
+		if (ch !== friend) at(sp, 60, 'Corwyn-Dashrealm', 'group');
+		at(sp, 300 + i * 30, 'Mirelle-Dashrealm', 'seen');
+		if (i % 2 === 1) {
+			at(sp, 400, 'Ana-Dashrealm', 'group');
+			at(sp, 900, 'Ana-Dashrealm', 'trade');
+			at(sp, 1500, 'Thoren-Dashrealm', 'duel', i % 4 === 1 ? 'won' : 'lost');
+			at(sp, 2400, 'Gruk-Otherrealm', 'fought');
+			at(sp, 2500, 'Gruk-Otherrealm', i % 4 === 1 ? 'killed' : 'killedby');
+		}
+	});
+	met.sort((x, y) => x.t - y.t);
+	const people = {};
+	for (const m of met) people[m.who] = { ...PEOPLE[m.who], seen: m.t };
+	return { people, met: Object.fromEntries(met.map((m, i) => [String(i + 1), m])), peopleAt: met[met.length - 1]?.t };
 }
 // A JS value as a Lua literal (SavedVariables style; numeric keys stay numeric).
 function luaOf(v, ind = '') {
@@ -263,6 +295,7 @@ for (let day = firstDay; day <= yesterday; day++) {
 		ch.sessions.forEach((sess, si) => {
 			const start = ch.level;
 			const recs = simulate(ch, sess, day, si + (ch === friend ? 0 : ci) * 7);
+			if (recs.length) (ch.spans ??= []).push([recs[0][0], recs[recs.length - 1][0], sess.legs[0]]);
 			let lvl = start;
 			const levels = recs.filter((r) => r[1] === 'level').map((r) => [r[0], r[2]]);
 			ch.levelAt = (t) => {

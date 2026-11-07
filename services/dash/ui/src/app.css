@@ -23,5 +23,6 @@ select option { background: var(--panel); color: var(--text); }
 @media (pointer: coarse), (max-width: 720px) {
 	button, select, [role='button'], input:not([type='range']):not([type='checkbox']):not([type='radio']) { min-height: 40px; }
 	input[type='range'] { min-height: 32px; }
-	button.qt, button.nb, button.close, button.play, button.icon, button.more { min-width: 40px; }
+	button.qt, button.pp, button.nb, button.close, button.play, button.icon, button.more { min-width: 40px; }
+	.rating button { min-width: 40px; }
 }
