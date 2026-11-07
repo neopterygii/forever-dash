@@ -74,6 +74,20 @@
 	const GATHER = [['herb', 'herb', 'herbs'], ['ore', 'vein', 'veins'], ['skin', 'skinned', 'skinned'], ['fish', 'fish', 'fish'], ['lock', 'lock', 'locks']] as const;
 	const groupTitle = (g: NonNullable<Session['group']>) => (g.raid ? `Raid of up to ${g.raid}` : `Party of up to ${g.party + 1}`);
 	const draftKey = (s: Session) => `${s.char}:${s.start}`;
+	/** One character's journal: a chapter card heads each run of sessions in one zone (newest first,
+	 *  so above the chapter's newest session shown). */
+	const chapterHere = (i: number) => {
+		const c = sessions?.[i]?.chapter;
+		return id && c && sessions?.[i - 1]?.chapter?.n !== c.n ? c : null;
+	};
+	function playtime(seconds: number): string {
+		const m = Math.round(seconds / 60);
+		return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
+	}
+	function levels(c: NonNullable<Session['chapter']>): string | null {
+		if (c.levelFrom == null || c.levelTo == null) return null;
+		return c.levelTo > c.levelFrom ? `levels ${c.levelFrom}–${c.levelTo}` : `level ${c.levelTo}`;
+	}
 
 	/** The map goes to the event's spot (lib/dash `focusPoint`, MapPane zooms there). */
 	function goTo(pos: Pos | null | undefined) {
@@ -133,12 +147,28 @@
 	{#if sessions && !sessions.length}
 		<p class="empty">{id ? 'Nothing recorded for this character yet.' : 'Nothing recorded yet.'}</p>
 	{:else if sessions}
-		{#each sessions as s (`${s.char}:${s.start}`)}
+		{#each sessions as s, i (`${s.char}:${s.start}`)}
+			{@const ch = chapterHere(i)}
+			{#if ch}
+				<div class="chapter">
+					<span class="cn">Chapter {ch.n}{ch.next ? '' : ' · now'}</span>
+					<h3>{ch.zone}</h3>
+					<div class="cmeta">
+						{#if levels(ch)}<span>{levels(ch)}</span>{/if}
+						<span>{ch.sessions} {ch.sessions === 1 ? 'session' : 'sessions'}</span>
+						<span>{playtime(ch.seconds)}</span>
+						{#if ch.quests}<span>{ch.quests} {ch.quests === 1 ? 'quest' : 'quests'}</span>{/if}
+						{#if ch.next}<span>then {ch.next}</span>{/if}
+					</div>
+					<p>{ch.intro}</p>
+				</div>
+			{/if}
 			<article class:current={dash.focus?.id === s.char && dash.focus?.buffer === key(s)}>
 				<div class="head">
 					{#if !id}<span class="who" style:color={dash.colorOf(s.char)}><b class="dot" style:background={dash.colorOf(s.char)}></b>{dash.name(s.char)}</span>{/if}
 					<h3>{day(s.start)}</h3>
 					<span class="when">{hhmm(s.start)}–{hhmm(s.end)} · {Math.round(s.seconds / 60)} min · {s.zones.join(', ')}</span>
+					{#if !id && s.chapter}<span class="chip" title={s.chapter.intro}>Ch. {s.chapter.n} · {s.chapter.zone}</span>{/if}
 					<button class="replay" onclick={() => dash.run(replay(s))}>Replay on map</button>
 				</div>
 				<div class="diary">
@@ -263,6 +293,13 @@
 	.note { display: flex; gap: 8px; padding: 0 12px 12px; }
 	.note input { flex: 1; background: var(--well); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 	.note button { background: var(--chip); border: 0; border-radius: 6px; padding: 6px 12px; }
+	.chapter { margin: 14px 2px 10px; padding: 0 2px 10px; border-bottom: 1px solid var(--divider); }
+	.chapter .cn { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+	.chapter h3 { margin: 2px 0 4px; font-size: 18px; }
+	.cmeta { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; color: var(--textDim); }
+	.cmeta span { background: var(--chip); border-radius: 999px; padding: 1px 8px; }
+	.chapter p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; font-style: italic; color: var(--textDim); }
+	.chip { background: var(--chip); border-radius: 999px; padding: 1px 8px; font-size: 11px; color: var(--textDim); }
 	.empty { color: var(--textDim); text-align: center; margin: 30px 0; }
 	@media (pointer: coarse), (max-width: 720px) {
 		.events .ev { padding: 8px 0; }

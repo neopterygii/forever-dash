@@ -295,7 +295,7 @@ const SMALL: [&str; 21] = [
 	"sixteen", "seventeen", "eighteen", "nineteen", "twenty",
 ];
 
-fn count(n: i64) -> String {
+pub(crate) fn count(n: i64) -> String {
 	usize::try_from(n).ok().and_then(|i| SMALL.get(i)).map_or_else(|| n.to_string(), |s| s.to_string())
 }
 
@@ -308,7 +308,7 @@ fn times(n: i64) -> String {
 }
 
 /// "A", "A and B", "A, B and C".
-fn list(items: &[String]) -> String {
+pub(crate) fn list(items: &[String]) -> String {
 	match items {
 		[] => String::new(),
 		[a] => a.clone(),
@@ -350,7 +350,7 @@ fn plural(name: &str) -> String {
 	if head.is_empty() { p } else { format!("{head} {p}") }
 }
 
-fn duration(minutes: i64) -> String {
+pub(crate) fn duration(minutes: i64) -> String {
 	match minutes {
 		0..=4 => "a few minutes".into(),
 		5..=44 => format!("{} minutes", count(minutes / 5 * 5)),

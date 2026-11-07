@@ -153,6 +153,27 @@ export interface Session {
 	gathered: Partial<Record<'herb' | 'ore' | 'skin' | 'fish' | 'lock', number>>;
 	events: Omit<DashEvent, 'char'>[];
 	notes: { id: number; t: number; text: string }[];
+	/** The zone chapter the session belongs to (server chapters.rs). */
+	chapter: Chapter | null;
+}
+
+/** A run of sessions in one main zone. */
+export interface Chapter {
+	n: number;
+	zone: string;
+	start: number;
+	end: number;
+	sessions: number;
+	seconds: number;
+	levelFrom: number | null;
+	levelTo: number | null;
+	quests: number;
+	deaths: number;
+	kills: number;
+	/** Where play went next; null while the chapter goes on. */
+	next: string | null;
+	/** "Previously, in Elwynn Forest: ..." */
+	intro: string;
 }
 
 export interface Item {

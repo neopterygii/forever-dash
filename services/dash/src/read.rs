@@ -416,9 +416,12 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 		None => db.prepare("SELECT char_id FROM characters")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?,
 	};
 	let mut older: Vec<(f64, f64, String)> = Vec::new();
+	let mut chapters: HashMap<String, Vec<crate::chapters::Chapter>> = HashMap::new();
 	for id in &ids {
+		let all = sessions(db, id)?;
+		chapters.insert(id.clone(), crate::chapters::all(db, id, &all)?);
 		older.extend(
-			sessions(db, id)?.into_iter().filter(|s| before.is_none_or(|(b, bc)| s.0 < b || (s.0 == b && id.as_str() > bc))).map(|(a, b)| (a, b, id.clone())),
+			all.into_iter().filter(|s| before.is_none_or(|(b, bc)| s.0 < b || (s.0 == b && id.as_str() > bc))).map(|(a, b)| (a, b, id.clone())),
 		);
 	}
 	older.sort_by(|x, y| y.0.total_cmp(&x.0).then_with(|| x.2.cmp(&y.2)));
@@ -535,7 +538,8 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 		let group = (gs.seconds > 0.0).then(|| {
 			json!({ "seconds": gs.seconds.round(), "party": gs.party, "raid": gs.raid, "with": gs.with.iter().map(|w| json!({ "char": w.0, "name": w.1 })).collect::<Vec<_>>() })
 		});
-		out.push(json!({ "group": group, "gathered": gathered,
+		let chapter = crate::chapters::of(&chapters[char_id], start);
+		out.push(json!({ "group": group, "gathered": gathered, "chapter": chapter,
 			"char": char_id, "start": start, "end": end, "diary": diary, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
 		}));

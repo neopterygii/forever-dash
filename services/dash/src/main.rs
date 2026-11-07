@@ -18,6 +18,7 @@
 //! `upload` stands in for the Polestar Client fork's `dash` module: it reads every account's
 //! Recorder SavedVariables and the per-character ones (charId -> name/realm) and uploads them.
 
+mod chapters;
 mod db;
 mod diary;
 mod group;
