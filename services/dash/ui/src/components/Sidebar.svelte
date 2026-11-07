@@ -20,8 +20,11 @@
 			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} color={dash.colorOf(c.id)} onpick={() => pick(c.id)} onopen={(view) => (dash.sheet = { id: c.id, view })} />
 		{/each}
 	</ul>
-	{#if dash.stats}
-		<footer class="stats">{dash.stats.chunks} chunks · {dash.stats.positions} positions · {dash.stats.events} events (all kept)</footer>
+	{#if dash.stats || dash.access?.group}
+		<footer class="stats">
+			{#if dash.stats}<span class="counts">{dash.stats.chunks} chunks · {dash.stats.positions} positions · {dash.stats.events} events (all kept)</span>{/if}
+			{#if dash.access?.group}<span class="grp">{dash.access.group} · <button onclick={() => dash.run(dash.signOut())}>Sign out</button></span>{/if}
+		</footer>
 	{/if}
 </aside>
 
@@ -36,9 +39,16 @@
 	.chars li.on button { background: var(--selected); box-shadow: inset 2px 0 0 var(--accent); }
 	.n { font-weight: 700; font-size: 14px; }
 	.all .n { font-size: 13px; }
-	.stats { padding: 12px 16px; color: var(--textMuted); font-size: 11px; border-top: 1px solid var(--border); }
+	.stats { display: grid; gap: 6px; padding: 12px 16px; color: var(--textMuted); font-size: 11px; border-top: 1px solid var(--border); }
+	.grp button { all: unset; color: var(--accent); cursor: pointer; font-weight: 600; }
+	.grp button:hover { text-decoration: underline; }
+	.grp button:focus-visible { outline: 1px solid var(--focus); }
 	@media (max-width: 720px) {
 		.side { max-height: 32vh; border-right: 0; border-bottom: 1px solid var(--border); }
-		.stats { display: none; }
+		/* Phones: only who is signed in, to sign out. */
+		.stats { padding: 6px 16px; }
+		.stats .counts { display: none; }
+		.grp button { padding: 8px 6px; margin: -8px -6px; }
+		.stats:not(:has(.grp)) { display: none; }
 	}
 </style>

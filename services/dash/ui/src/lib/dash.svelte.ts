@@ -4,7 +4,7 @@
 //   pin per character). The buffer bounds what the page loads; the database keeps everything.
 // - focus: one character in full detail (fine trail, arrow, journal events as pins), the others
 //   faint. Its buffer defaults to the last session and can grow to all play.
-import { api, prep, type Character, type DashEvent, type OverviewChar, type Span, type Stats, type Trail } from './api';
+import { api, auth, prep, type Access, type Character, type DashEvent, type OverviewChar, type Span, type Stats, type Trail } from './api';
 import { Timeline, playtimeFrom } from './timeline';
 import { PALETTE } from './overlay';
 
@@ -108,7 +108,19 @@ class Dash {
 		return c ? [c.name || id, c.surname].filter(Boolean).join(' ') : id;
 	}
 
+	/** Who is viewing (null until asked). With groups and no sign-in, the page shows the sign-in. */
+	access = $state<Access | null>(null);
+
+	get signedOut() {
+		return !!this.access?.groups && !this.access.signedIn;
+	}
+
 	async load() {
+		auth.onSignedOut = () => {
+			if (this.access) this.access = { ...this.access, signedIn: false, group: null };
+		};
+		this.access = await api.me();
+		if (this.signedOut) return;
 		const [chars, stats] = await Promise.all([api.characters(), api.stats()]);
 		this.chars = chars;
 		this.stats = stats;
@@ -183,6 +195,26 @@ class Dash {
 		this.mode = 'focus';
 		this.syncLocation();
 		this.setTimeline(sessions.filter(([a, b]) => b >= from && a <= to).map(([a, b]): Span => [Math.max(a, from), Math.min(b, to)]));
+	}
+
+	async signIn(code: string): Promise<boolean> {
+		if (!(await api.signIn(code))) return false;
+		await this.load();
+		return true;
+	}
+
+	async signOut() {
+		await api.signOut();
+		this.chars = [];
+		this.overview = null;
+		this.focus = null;
+		this.mode = 'overview';
+		this.timeline = null;
+		this.journalOpen = false;
+		this.people = null;
+		this.sheet = null;
+		history.replaceState(null, '', location.pathname + location.search);
+		this.access = { groups: true, signedIn: false, group: null };
 	}
 
 	/** Runs a load, showing its error instead of throwing. */

@@ -39,13 +39,24 @@ CREATE TABLE IF NOT EXISTS met (
 	PRIMARY KEY (char_id, t, who, how)
 );
 CREATE INDEX IF NOT EXISTS met_who ON met (who, t);
--- Yours: a rating (1-5) and notes per player.
+-- Yours: a rating (1-5) and notes per player, per group (groups.rs; '' on a site without groups).
 CREATE TABLE IF NOT EXISTS person_notes (
 	who TEXT PRIMARY KEY,
 	rating INTEGER,
 	note TEXT,
 	at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS group_person_notes (
+	grp TEXT NOT NULL,
+	who TEXT NOT NULL,
+	rating INTEGER,
+	note TEXT,
+	at INTEGER NOT NULL,
+	PRIMARY KEY (grp, who)
+);
+-- Notes from before groups: moved over (groups.rs gives them to the first group).
+INSERT OR IGNORE INTO group_person_notes (grp, who, rating, note, at) SELECT '', who, rating, note, at FROM person_notes;
+DELETE FROM person_notes;
 ";
 
 pub const HOWS: &[&str] = &["group", "trade", "duel", "seen", "fought", "killedby", "killed"];
@@ -185,11 +196,11 @@ fn facts_json(r: &rusqlite::Row) -> rusqlite::Result<Value> {
 }
 
 const PERSON_COLS: &str = "p.who, p.name, p.realm, p.class, p.race, p.sex, p.level, p.guild, p.faction, p.seen, n.rating, n.note
-	FROM people p LEFT JOIN person_notes n ON n.who = p.who";
+	FROM people p LEFT JOIN group_person_notes n ON n.who = p.who AND n.grp = ?1";
 
 /// Everyone met (by one character, or by any), the latest meeting first: facts, your rating and
 /// notes, how often and how, and which of our characters met them.
-pub fn list(db: &Connection, char_id: Option<&str>) -> rusqlite::Result<Value> {
+pub fn list(db: &Connection, char_id: Option<&str>, scope: &crate::groups::Scope) -> rusqlite::Result<Value> {
 	let ours = ours(db)?;
 	// who -> (first, last, count per how, our characters)
 	type Seen = (f64, f64, BTreeMap<String, i64>, Vec<String>);
@@ -198,6 +209,9 @@ pub fn list(db: &Connection, char_id: Option<&str>) -> rusqlite::Result<Value> {
 	let rows = st.query_map([char_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, f64>(3)?, r.get::<_, f64>(4)?, r.get::<_, i64>(5)?)))?;
 	for row in rows {
 		let (who, how, ch, first, last, count) = row?;
+		if !scope.has(&ch) {
+			continue;
+		}
 		let e = seen.entry(who).or_insert((f64::MAX, 0.0, BTreeMap::new(), Vec::new()));
 		e.0 = e.0.min(first);
 		e.1 = e.1.max(last);
@@ -208,7 +222,7 @@ pub fn list(db: &Connection, char_id: Option<&str>) -> rusqlite::Result<Value> {
 	}
 	let mut st = db.prepare(&format!("SELECT {PERSON_COLS}"))?;
 	let mut out: Vec<Value> = Vec::new();
-	let rows = st.query_map([], facts_json)?;
+	let rows = st.query_map([&scope.grp], facts_json)?;
 	for row in rows {
 		let mut p = row?;
 		let who = p["who"].as_str().unwrap_or_default().to_string();
@@ -227,25 +241,30 @@ pub fn list(db: &Connection, char_id: Option<&str>) -> rusqlite::Result<Value> {
 }
 
 /// One player: facts, your rating and notes, and every meeting (newest first) with its place.
-pub fn person(db: &Connection, who: &str) -> rusqlite::Result<Value> {
-	let Some(mut p) = db.query_row(&format!("SELECT {PERSON_COLS} WHERE p.who = ?1"), [who], facts_json).optional()? else { return Ok(Value::Null) };
+pub fn person(db: &Connection, who: &str, scope: &crate::groups::Scope) -> rusqlite::Result<Value> {
+	let Some(mut p) = db.query_row(&format!("SELECT {PERSON_COLS} WHERE p.who = ?2"), [&scope.grp, who], facts_json).optional()? else { return Ok(Value::Null) };
 	p["ours"] = json!(ours(db)?.get(who));
 	let frames = crate::read::frames(db)?;
 	let mut zones = HashMap::new();
 	let meetings: Vec<Value> = met_rows(db, &format!("SELECT {MET_COLS} WHERE m.who = ?1 ORDER BY m.t DESC LIMIT 500"), [who])?
 		.into_iter()
+		.filter(|m| scope.has(&m.char_id))
 		.map(|m| {
 			let zone = m.map.and_then(|map| crate::diary::zone_of(db, &mut zones, map));
 			json!({ "char": m.char_id, "t": m.t, "how": m.how, "note": m.note, "text": line(&m).unwrap_or_else(|| format!("Saw {}", m.name)),
 				"zone": zone, "pos": crate::read::world_of(&frames, m.map, m.x, m.y) })
 		})
 		.collect();
+	// Only someone the group's characters met.
+	if meetings.is_empty() {
+		return Ok(Value::Null);
+	}
 	p["met"] = json!(meetings);
 	Ok(p)
 }
 
 /// Your rating (1-5; 0 or none clears it) and notes for a player.
-pub fn set_note(db: &Connection, who: &str, rating: Option<i64>, note: &str) -> Result<(), String> {
+pub fn set_note(db: &Connection, grp: &str, who: &str, rating: Option<i64>, note: &str) -> Result<(), String> {
 	if note.len() > MAX_NOTE {
 		return Err("note too long".into());
 	}
@@ -253,12 +272,12 @@ pub fn set_note(db: &Connection, who: &str, rating: Option<i64>, note: &str) -> 
 	let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
 	let note = note.trim();
 	if rating.is_none() && note.is_empty() {
-		db.execute("DELETE FROM person_notes WHERE who = ?1", [who]).map_err(|e| e.to_string())?;
+		db.execute("DELETE FROM group_person_notes WHERE grp = ?1 AND who = ?2", [grp, who]).map_err(|e| e.to_string())?;
 	} else {
 		db.execute(
-			"INSERT INTO person_notes (who, rating, note, at) VALUES (?1, ?2, NULLIF(?3, ''), ?4)
-			 ON CONFLICT (who) DO UPDATE SET rating = ?2, note = NULLIF(?3, ''), at = ?4",
-			params![who, rating, note, now],
+			"INSERT INTO group_person_notes (who, rating, note, at, grp) VALUES (?1, ?2, NULLIF(?3, ''), ?4, ?5)
+			 ON CONFLICT (grp, who) DO UPDATE SET rating = ?2, note = NULLIF(?3, ''), at = ?4",
+			params![who, rating, note, now, grp],
 		)
 		.map_err(|e| e.to_string())?;
 	}
@@ -317,17 +336,24 @@ mod tests {
 		let db = db();
 		let (_, people, met) = split(&save());
 		store(&db, "c1", people.as_ref(), met.as_ref()).unwrap();
-		set_note(&db, "Ana-Realm Nine", Some(5), " kind healer ").unwrap();
-		let l = list(&db, None).unwrap();
+		let us = crate::groups::Scope { grp: "g1".into(), name: None, chars: ["c1".to_string(), "c2".to_string()].into() };
+		let them = crate::groups::Scope { grp: "g2".into(), name: None, chars: ["c9".to_string()].into() };
+		set_note(&db, "g1", "Ana-Realm Nine", Some(5), " kind healer ").unwrap();
+		let l = list(&db, None, &us).unwrap();
 		let ana = l.as_array().unwrap().iter().find(|p| p["who"] == "Ana-Realm Nine").unwrap();
 		assert_eq!(ana["count"], 2);
 		assert_eq!(ana["hows"]["duel"], 1);
 		assert_eq!(ana["rating"], 5);
 		assert_eq!(ana["note"], "kind healer");
-		assert_eq!(list(&db, Some("c2")).unwrap().as_array().unwrap().len(), 0, "met by another character only");
-		set_note(&db, "Ana-Realm Nine", Some(0), "").unwrap();
-		assert_eq!(list(&db, None).unwrap()[1]["rating"], Value::Null, "cleared");
+		assert_eq!(list(&db, Some("c2"), &us).unwrap().as_array().unwrap().len(), 0, "met by another character only");
+		// Another group sees neither the meetings nor the notes.
+		assert_eq!(list(&db, None, &them).unwrap().as_array().unwrap().len(), 0);
+		assert_eq!(person(&db, "Ana-Realm Nine", &them).unwrap(), Value::Null);
+		assert_eq!(person(&db, "Ana-Realm Nine", &us).unwrap()["rating"], 5);
+		set_note(&db, "g1", "Ana-Realm Nine", Some(0), "").unwrap();
+		assert_eq!(list(&db, None, &us).unwrap()[1]["rating"], Value::Null, "cleared");
 	}
+
 
 	#[test]
 	fn journal_lines() {

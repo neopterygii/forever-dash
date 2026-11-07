@@ -29,7 +29,7 @@ fn parse(src: &str) -> Tracks {
 			let (Some(f), Some(to)) = (from, id(l)) else { continue };
 			let Some(body) = l.split_once('{').map(|(_, b)| b.trim_end_matches(',').trim_end_matches('}')) else { continue };
 			let pts: Vec<f64> = body.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-			if pts.len() >= 4 && pts.len() % 2 == 0 {
+			if pts.len() >= 4 && pts.len().is_multiple_of(2) {
 				out.entry(f).or_default().insert(to, pts);
 			}
 		}

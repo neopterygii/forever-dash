@@ -30,6 +30,7 @@ COPY addon/Polestar/Media/Fonts /app/fonts
 VOLUME /data
 EXPOSE 8790
 # /data: dash.db, art/ (forever-dash art build), spoken/ (Spoken's quest narration, fetched and kept
-# current by the server), tokens (one device token per line; absent = open uploads), ai-key (the
+# current by the server), groups (group codes: sign-in and uploads, see src/groups.rs; absent = an open
+# site), tokens (device tokens when there are no groups; absent = open uploads), ai-key (the
 # LiteLLM gateway's key: diary entries in prose; absent = template entries only; DASH_AI_URL, DASH_AI_MODEL)
-CMD ["sh", "-c", "exec forever-dash serve --db /data/dash.db --addr 0.0.0.0:8790 --web /app/web --fonts /app/fonts --art /data/art --spoken /data/spoken $( [ -f /data/tokens ] && echo --tokens /data/tokens ) $( [ -f /data/ai-key ] && echo --ai-url ${DASH_AI_URL:-http://litellm:4000/v1/chat/completions} --ai-key-file /data/ai-key --ai-model ${DASH_AI_MODEL:-diary} )"]
+CMD ["sh", "-c", "exec forever-dash serve --db /data/dash.db --addr 0.0.0.0:8790 --web /app/web --fonts /app/fonts --art /data/art --spoken /data/spoken $( [ -f /data/groups ] && echo --groups /data/groups ) $( [ -f /data/tokens ] && echo --tokens /data/tokens ) $( [ -f /data/ai-key ] && echo --ai-url ${DASH_AI_URL:-http://litellm:4000/v1/chat/completions} --ai-key-file /data/ai-key --ai-model ${DASH_AI_MODEL:-diary} )"]

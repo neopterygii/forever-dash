@@ -7,6 +7,7 @@
 	import Journal from './components/Journal.svelte';
 	import CharacterSheet from './components/CharacterSheet.svelte';
 	import People from './components/People.svelte';
+	import SignIn from './components/SignIn.svelte';
 
 	onMount(() => {
 		dash.run(dash.load());
@@ -31,6 +32,9 @@
 	});
 </script>
 
+{#if dash.signedOut}
+<SignIn />
+{:else if dash.access}
 <div class="app">
 	<Sidebar />
 	<main>
@@ -54,6 +58,7 @@
 </div>
 <CharacterSheet />
 <People />
+{/if}
 <svelte:window onkeydown={onkey} />
 {#if dash.error}<pre class="error">{dash.error}</pre>{/if}
 

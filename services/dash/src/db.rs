@@ -106,6 +106,7 @@ const ADDED: &[(&str, &str, &str)] = &[
 	// The quest's text as the character saw it (the `text` record).
 	("quests", "objectives", "TEXT"),
 	("quests", "details", "TEXT"),
+	("characters", "grp", "TEXT"),
 ];
 
 pub fn open(path: &str) -> rusqlite::Result<Connection> {

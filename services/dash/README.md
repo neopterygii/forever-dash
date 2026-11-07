@@ -22,6 +22,13 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
 ./target/release/forever-dash spoken sync --dir spoken --db dash.db   # newest Spoken quest narration
 ```
 
+- **Groups (`serve --groups FILE`):** who sees what. Each line of the file is a group, `<code> <name>`
+  (`forever-dash group-code` makes a code), or `+ <device token> <code>` for an older device token that
+  uploads into that group. A client uploads with the group code as its token; its characters belong to
+  that group (the latest upload decides). The site asks for a group code (`POST /api/signin`, kept in an
+  HttpOnly cookie for a year) and every read is limited to the group's characters; player notes are
+  per group. No code, no site: there is no registration. Without `--groups` the site is open and uploads
+  follow `--tokens`.
 - `POST /v1/upload`: upstream ingest's body and answer (accepted / duplicate / rejected per
   seq, de-duplicated on (install, seq)), plus `maps` and `characters` (charId -> name/realm,
   read from `WTF/Account/<acct>/<realm>/<name>/SavedVariables/Polestar_Recorder.lua`: the

@@ -384,8 +384,9 @@ pub fn events(db: &Connection, char_id: Option<&str>, from: f64, to: f64, kinds:
 
 /// The live map: per character, the last `hours` of playtime as a coarse trail (`tol` yards) and
 /// its milestones. Bounded by playtime, so the payload stays small however long the history is.
-pub fn overview(db: &Connection, hours: f64, tol: f64) -> rusqlite::Result<Value> {
-	let ids: Vec<String> = db.prepare("SELECT char_id FROM characters")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+/// `ids`: the characters to show (the viewer's group).
+pub fn overview(db: &Connection, hours: f64, tol: f64, ids: &[String]) -> rusqlite::Result<Value> {
+	let ids = ids.to_vec();
 	let mut out = Vec::new();
 	for id in ids {
 		let sess = sessions(db, &id)?;
@@ -438,11 +439,12 @@ pub const JOURNAL_PAGE: usize = 10;
 /// One page of the journal of one character, or of every character together (`char_id` None):
 /// up to `limit` sessions after the cursor `before` (the last one shown: its start and character;
 /// None = the newest), newest first (same start: by character), and whether older ones remain.
-pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str)>, limit: usize) -> rusqlite::Result<Value> {
+/// `all`: the characters "every character" means (the viewer's group).
+pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str)>, limit: usize, all: &[String]) -> rusqlite::Result<Value> {
 	let frames = frames(db)?;
 	let ids: Vec<String> = match char_id {
 		Some(c) => vec![c.to_string()],
-		None => db.prepare("SELECT char_id FROM characters")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?,
+		None => all.to_vec(),
 	};
 	let mut older: Vec<(f64, f64, String)> = Vec::new();
 	let mut chapters: HashMap<String, Vec<crate::chapters::Chapter>> = HashMap::new();

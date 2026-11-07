@@ -1,6 +1,7 @@
 //! forever-dash: the self-hosted dashboard server.
 //!
-//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--tokens FILE] [--fonts DIR]
+//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--groups FILE] [--tokens FILE] [--fonts DIR]
+//!   forever-dash group-code                 a new group code, for a line of the --groups file (groups.rs)
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
 //!   forever-dash reparse [--db dash.db]   rebuild the derived tables from the raw chunks
@@ -23,6 +24,7 @@ mod db;
 mod diary;
 mod flights;
 mod group;
+mod groups;
 mod ingest;
 mod milestones;
 mod names;
@@ -37,6 +39,7 @@ use std::sync::{Arc, Mutex};
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ingest::{DashUpload, Who};
@@ -64,20 +67,93 @@ fn authorized(headers: &axum::http::HeaderMap) -> bool {
 	tokens.iter().any(|t| t == given)
 }
 
-async fn upload(State(db): State<Db>, headers: axum::http::HeaderMap, Json(req): Json<DashUpload>) -> Response {
-	if !authorized(&headers) {
+async fn upload(State(db): State<Db>, headers: HeaderMap, Json(req): Json<DashUpload>) -> Response {
+	// With groups, the token is a group code (or a device token of one); else the --tokens list.
+	let grp = match groups::upload_group(&headers) {
+		Ok(g) => g,
+		Err(()) => return (StatusCode::UNAUTHORIZED, "unknown token").into_response(),
+	};
+	if grp.is_none() && !authorized(&headers) {
 		return (StatusCode::UNAUTHORIZED, "unknown token").into_response();
 	}
 	let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
 	let mut db = db.lock().unwrap();
 	match ingest::upload(&mut db, &req, now) {
-		Ok(r) => Json(r).into_response(),
+		Ok(r) => {
+			if let Some(g) = grp {
+				let chars: Vec<&str> = req.characters.keys().chain(req.snapshots.keys()).map(String::as_str).collect();
+				if let Err(e) = groups::claim(&db, &g, &req.install, &chars) {
+					return err500(e);
+				}
+			}
+			Json(r).into_response()
+		}
 		Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
 	}
 }
 
-async fn characters(State(db): State<Db>) -> Response {
-	read::characters(&db.lock().unwrap()).map(Json).map_or_else(err500, IntoResponse::into_response)
+/// The request's group, or the answer to send instead (401: not signed in).
+#[allow(clippy::result_large_err)]
+fn scoped(db: &rusqlite::Connection, headers: &HeaderMap) -> Result<groups::Scope, Response> {
+	match groups::scope(db, headers) {
+		Ok(Some(s)) => Ok(s),
+		Ok(None) => Err((StatusCode::UNAUTHORIZED, "sign in with your group code").into_response()),
+		Err(e) => Err(err500(e)),
+	}
+}
+
+/// The scope, or return its error answer from the handler.
+macro_rules! scope {
+	($db:expr, $h:expr) => {
+		match scoped(&$db, &$h) {
+			Ok(s) => s,
+			Err(r) => return r,
+		}
+	};
+}
+
+/// A character outside the viewer's group: as if there were none.
+fn not_ours() -> Response {
+	(StatusCode::NOT_FOUND, "no such character").into_response()
+}
+
+#[derive(Deserialize)]
+struct SignIn {
+	code: String,
+}
+
+/// Signs in with a group code: a cookie for a year. A wrong code waits a second (guessing is slow).
+async fn sign_in(Json(b): Json<SignIn>) -> Response {
+	let Some((code, name)) = groups::by_code(&b.code) else {
+		tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+		return (StatusCode::UNAUTHORIZED, "unknown group code").into_response();
+	};
+	let cookie = format!("{}={code}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax", groups::COOKIE);
+	([(axum::http::header::SET_COOKIE, cookie)], Json(json!({ "group": name }))).into_response()
+}
+
+async fn sign_out() -> Response {
+	let cookie = format!("{}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax", groups::COOKIE);
+	([(axum::http::header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response()
+}
+
+/// Who is viewing: the group's name, whether the site has groups at all, signed in or not.
+async fn me(State(db): State<Db>, headers: HeaderMap) -> Response {
+	let db = db.lock().unwrap();
+	match groups::scope(&db, &headers) {
+		Ok(s) => Json(json!({ "groups": groups::get().is_some(), "signedIn": s.is_some(), "group": s.and_then(|s| s.name) })).into_response(),
+		Err(e) => err500(e),
+	}
+}
+
+async fn characters(State(db): State<Db>, headers: HeaderMap) -> Response {
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	match read::characters(&db) {
+		Ok(Value::Array(v)) => Json(Value::Array(v.into_iter().filter(|c| c["id"].as_str().is_some_and(|id| sc.has(id))).collect())).into_response(),
+		Ok(v) => Json(v).into_response(),
+		Err(e) => err500(e),
+	}
 }
 
 #[derive(Deserialize)]
@@ -88,8 +164,11 @@ struct TrailQ {
 	tol: Option<f64>,
 }
 
-async fn trail(State(db): State<Db>, Query(q): Query<TrailQ>) -> Response {
+async fn trail(State(db): State<Db>, headers: HeaderMap, Query(q): Query<TrailQ>) -> Response {
 	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&q.char) {
+		return not_ours();
+	}
 	match read::trail(&db, &q.char, q.from.unwrap_or(0.0), q.to.unwrap_or(f64::MAX), q.tol.unwrap_or(1.5)) {
 		Ok((segs, total)) => {
 			let kept: usize = segs.iter().map(|s| s.ts.len()).sum();
@@ -115,9 +194,15 @@ struct JournalQ {
 	limit: Option<usize>,
 }
 
-async fn journal(State(db): State<Db>, Query(q): Query<JournalQ>) -> Response {
+async fn journal(State(db): State<Db>, headers: HeaderMap, Query(q): Query<JournalQ>) -> Response {
 	let limit = q.limit.unwrap_or(read::JOURNAL_PAGE).clamp(1, 200);
-	read::journal(&db.lock().unwrap(), q.char.as_deref().filter(|c| !c.is_empty()), q.before.map(|b| (b, q.before_char.as_deref().unwrap_or(""))), limit).map(Json).map_or_else(err500, IntoResponse::into_response)
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	let char = q.char.as_deref().filter(|c| !c.is_empty());
+	if char.is_some_and(|c| !sc.has(c)) {
+		return not_ours();
+	}
+	read::journal(&db, char, q.before.map(|b| (b, q.before_char.as_deref().unwrap_or(""))), limit, &sc.list()).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -126,20 +211,34 @@ struct QuestQ {
 	id: i64,
 }
 
-async fn quest(State(db): State<Db>, Query(q): Query<QuestQ>) -> Response {
-	read::quest(&db.lock().unwrap(), &q.char, q.id).map(Json).map_or_else(err500, IntoResponse::into_response)
+async fn quest(State(db): State<Db>, headers: HeaderMap, Query(q): Query<QuestQ>) -> Response {
+	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&q.char) {
+		return not_ours();
+	}
+	read::quest(&db, &q.char, q.id).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
-async fn snapshot(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
-	read::snapshot(&db.lock().unwrap(), &q.char).map(Json).map_or_else(err500, IntoResponse::into_response)
+async fn snapshot(State(db): State<Db>, headers: HeaderMap, Query(q): Query<CharQ>) -> Response {
+	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&q.char) {
+		return not_ours();
+	}
+	read::snapshot(&db, &q.char).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
-async fn item_ids(State(db): State<Db>) -> Response {
-	read::item_ids(&db.lock().unwrap()).map(|v| Json(json!(v))).map_or_else(err500, IntoResponse::into_response)
+async fn item_ids(State(db): State<Db>, headers: HeaderMap) -> Response {
+	let db = db.lock().unwrap();
+	scope!(db, headers);
+	read::item_ids(&db).map(|v| Json(json!(v))).map_or_else(err500, IntoResponse::into_response)
 }
 
-async fn sessions(State(db): State<Db>, Query(q): Query<CharQ>) -> Response {
-	read::sessions(&db.lock().unwrap(), &q.char).map(|s| Json(json!(s))).map_or_else(err500, IntoResponse::into_response)
+async fn sessions(State(db): State<Db>, headers: HeaderMap, Query(q): Query<CharQ>) -> Response {
+	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&q.char) {
+		return not_ours();
+	}
+	read::sessions(&db, &q.char).map(|s| Json(json!(s))).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -149,9 +248,11 @@ struct OverviewQ {
 	tol: Option<f64>,
 }
 
-async fn overview(State(db): State<Db>, Query(q): Query<OverviewQ>) -> Response {
+async fn overview(State(db): State<Db>, headers: HeaderMap, Query(q): Query<OverviewQ>) -> Response {
 	let hours = q.hours.unwrap_or(6.0).clamp(0.1, 200.0);
-	read::overview(&db.lock().unwrap(), hours, q.tol.unwrap_or(8.0).max(0.5)).map(Json).map_or_else(err500, IntoResponse::into_response)
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	read::overview(&db, hours, q.tol.unwrap_or(8.0).max(0.5), &sc.list()).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -163,11 +264,16 @@ struct EventsQ {
 	kinds: Option<String>,
 }
 
-async fn events(State(db): State<Db>, Query(q): Query<EventsQ>) -> Response {
+async fn events(State(db): State<Db>, headers: HeaderMap, Query(q): Query<EventsQ>) -> Response {
 	let kinds = q.kinds.unwrap_or_default();
 	let kinds: Vec<&str> = kinds.split(',').filter(|k| !k.is_empty()).collect();
-	read::events(&db.lock().unwrap(), q.char.as_deref(), q.from.unwrap_or(0.0), q.to.unwrap_or(f64::MAX), &kinds)
-		.map(|v| Json(Value::Array(v)))
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	if q.char.as_deref().is_some_and(|c| !sc.has(c)) {
+		return not_ours();
+	}
+	read::events(&db, q.char.as_deref(), q.from.unwrap_or(0.0), q.to.unwrap_or(f64::MAX), &kinds)
+		.map(|v| Json(Value::Array(v.into_iter().filter(|e| e["char"].as_str().is_some_and(|c| sc.has(c))).collect())))
 		.map_or_else(err500, IntoResponse::into_response)
 }
 
@@ -178,11 +284,14 @@ struct NoteBody {
 	text: String,
 }
 
-async fn add_note(State(db): State<Db>, Json(n): Json<NoteBody>) -> Response {
+async fn add_note(State(db): State<Db>, headers: HeaderMap, Json(n): Json<NoteBody>) -> Response {
 	if n.text.trim().is_empty() || n.text.len() > 4000 {
 		return (StatusCode::BAD_REQUEST, "empty or too long").into_response();
 	}
 	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&n.char) {
+		return not_ours();
+	}
 	match db.execute("INSERT INTO notes (char_id, t, text) VALUES (?1, ?2, ?3)", rusqlite::params![n.char, n.t, n.text.trim()]) {
 		Ok(_) => Json(json!({ "id": db.last_insert_rowid() })).into_response(),
 		Err(e) => err500(e),
@@ -197,11 +306,14 @@ struct DiaryBody {
 	text: String,
 }
 
-async fn set_diary(State(db): State<Db>, Json(d): Json<DiaryBody>) -> Response {
+async fn set_diary(State(db): State<Db>, headers: HeaderMap, Json(d): Json<DiaryBody>) -> Response {
 	if d.text.len() > 8000 {
 		return (StatusCode::BAD_REQUEST, "too long").into_response();
 	}
 	let db = db.lock().unwrap();
+	if !scope!(db, headers).has(&d.char) {
+		return not_ours();
+	}
 	match diary::set_mine(&db, &d.char, d.start, &d.text).and_then(|_| diary::entry(&db, &d.char, d.start, d.start)) {
 		Ok(_) => Json(json!({ "ok": true })).into_response(),
 		Err(e) => err500(e),
@@ -214,8 +326,10 @@ struct PeopleQ {
 	char: Option<String>,
 }
 
-async fn people_list(State(db): State<Db>, Query(q): Query<PeopleQ>) -> Response {
-	people::list(&db.lock().unwrap(), q.char.as_deref().filter(|c| !c.is_empty())).map(Json).map_or_else(err500, IntoResponse::into_response)
+async fn people_list(State(db): State<Db>, headers: HeaderMap, Query(q): Query<PeopleQ>) -> Response {
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	people::list(&db, q.char.as_deref().filter(|c| !c.is_empty()), &sc).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -223,8 +337,10 @@ struct PersonQ {
 	who: String,
 }
 
-async fn person(State(db): State<Db>, Query(q): Query<PersonQ>) -> Response {
-	people::person(&db.lock().unwrap(), &q.who).map(Json).map_or_else(err500, IntoResponse::into_response)
+async fn person(State(db): State<Db>, headers: HeaderMap, Query(q): Query<PersonQ>) -> Response {
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	people::person(&db, &q.who, &sc).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -236,22 +352,31 @@ struct PersonBody {
 	note: String,
 }
 
-async fn set_person(State(db): State<Db>, Json(b): Json<PersonBody>) -> Response {
-	match people::set_note(&db.lock().unwrap(), &b.who, b.rating, &b.note) {
+async fn set_person(State(db): State<Db>, headers: HeaderMap, Json(b): Json<PersonBody>) -> Response {
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	// Only someone the group's characters met.
+	if people::person(&db, &b.who, &sc).map_or(true, |p| p.is_null()) {
+		return (StatusCode::NOT_FOUND, "no such player").into_response();
+	}
+	match people::set_note(&db, &sc.grp, &b.who, b.rating, &b.note) {
 		Ok(()) => Json(json!({ "ok": true })).into_response(),
 		Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
 	}
 }
 
-async fn stats(State(db): State<Db>) -> Response {
+async fn stats(State(db): State<Db>, headers: HeaderMap) -> Response {
 	let db = db.lock().unwrap();
-	let count = |sql: &str| db.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(-1);
+	let sc = scope!(db, headers);
+	// The group's own (all of it on a site without groups).
+	let count = |sql: &str| db.query_row(sql, [&sc.grp], |r| r.get::<_, i64>(0)).unwrap_or(-1);
+	let mine = "char_id IN (SELECT char_id FROM characters WHERE ?1 = '' OR grp = ?1)";
 	Json(json!({
-		"chunks": count("SELECT COUNT(*) FROM chunks"),
-		"positions": count("SELECT COUNT(*) FROM positions"),
-		"events": count("SELECT COUNT(*) FROM events"),
-		"characters": count("SELECT COUNT(*) FROM characters"),
-		"maps": count("SELECT COUNT(*) FROM maps"),
+		"chunks": count(&format!("SELECT COUNT(*) FROM chunks WHERE {mine}")),
+		"positions": count(&format!("SELECT COUNT(*) FROM positions WHERE {mine}")),
+		"events": count(&format!("SELECT COUNT(*) FROM events WHERE {mine}")),
+		"characters": count(&format!("SELECT COUNT(*) FROM characters WHERE {mine}")),
+		"maps": db.query_row("SELECT COUNT(*) FROM maps", [], |r| r.get::<_, i64>(0)).unwrap_or(-1),
 	}))
 	.into_response()
 }
@@ -272,6 +397,14 @@ async fn serve(args: &[String]) {
 		println!("uploads need one of {} device tokens", tokens.len());
 	}
 	let _ = TOKENS.set(tokens);
+	// Groups: sign-in codes and who sees which characters (groups.rs). None: an open site.
+	if let Some(f) = args.iter().position(|a| a == "--groups").and_then(|i| args.get(i + 1)) {
+		let g = groups::parse(&std::fs::read_to_string(f).expect("read --groups")).unwrap_or_else(|e| panic!("--groups {f}: {e}"));
+		println!("{} groups: viewing and uploads need a group code", g.list.len());
+		groups::init(&db.lock().unwrap(), g).expect("give earlier characters to the first group");
+	} else {
+		println!("no --groups: the site is open to anyone who can reach it");
+	}
 	// Spoken's narration: served from <dir>/<current version>, followed daily. The static route is
 	// resolved per request so a new version is served without a restart.
 	let spoken_dir = args.iter().position(|a| a == "--spoken").and_then(|i| args.get(i + 1)).map(PathBuf::from);
@@ -307,6 +440,9 @@ async fn serve(args: &[String]) {
 		.route("/api/people", get(people_list))
 		.route("/api/person", get(person).post(set_person))
 		.route("/api/stats", get(stats))
+		.route("/api/me", get(me))
+		.route("/api/signin", post(sign_in))
+		.route("/api/signout", post(sign_out))
 		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
 		.nest_service("/art", ServeDir::new(art).precompressed_gzip())
 		// Inter and Fira Sans (SIL OFL 1.1), as the addon ships them.
@@ -473,6 +609,10 @@ async fn main() {
 		}
 		Some("upload") => tokio::task::spawn_blocking(move || upload_cmd(&args)).await.unwrap(),
 		Some("dump") => dump(&args),
+		Some("group-code") => {
+			println!("{}", groups::new_code());
+			Ok(())
+		}
 		Some("names") => {
 			let data = PathBuf::from(arg(&args, "--data", "data/forever"));
 			let tables = PathBuf::from(arg(&args, "--tables", ""));

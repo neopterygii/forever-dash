@@ -282,15 +282,37 @@ export interface Stats {
 	maps: number;
 }
 
+/** Called when the server says the viewer is not signed in (a group code was removed, the cookie expired). */
+export const auth = { onSignedOut: () => {} };
+
 async function get<T>(path: string): Promise<T> {
 	const r = await fetch(path);
+	if (r.status === 401) auth.onSignedOut();
 	if (!r.ok) throw new Error(`${path}: ${r.status}`);
 	return r.json() as Promise<T>;
 }
 
 const q = (params: Record<string, string | number>) => new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
+/** Who is viewing: whether the site has groups (sign-in codes), and the group signed in to. */
+export interface Access {
+	groups: boolean;
+	signedIn: boolean;
+	group: string | null;
+}
+
 export const api = {
+	me: () => get<Access>('/api/me'),
+	/** Signs in with a group code (the server sets a cookie); false for an unknown code. */
+	signIn: async (code: string) => {
+		const r = await fetch('/api/signin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+		if (r.status === 401) return false;
+		if (!r.ok) throw new Error(`sign in: ${r.status}`);
+		return true;
+	},
+	signOut: async () => {
+		await fetch('/api/signout', { method: 'POST' });
+	},
 	characters: () => get<Character[]>('/api/characters'),
 	stats: () => get<Stats>('/api/stats'),
 	overview: (hours: number, tol = 8) => get<{ hours: number; characters: OverviewChar[] }>(`/api/overview?${q({ hours, tol })}`),
