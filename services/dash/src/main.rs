@@ -20,6 +20,7 @@
 
 mod db;
 mod diary;
+mod group;
 mod ingest;
 mod milestones;
 mod names;

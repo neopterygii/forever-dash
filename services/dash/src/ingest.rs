@@ -20,6 +20,8 @@ const EVENT_KINDS: &[Kind] = &[
 	Kind::Rare, Kind::Bind, Kind::Kill, Kind::Ride, Kind::Afk,
 	// For milestones (milestones.rs): gathering, profession skill.
 	Kind::Loot, Kind::Skill,
+	// Group play (group.rs), skill gathering (lockpicking), failed quests (Recorder 0.3.3+).
+	Kind::Group, Kind::Gather, Kind::Fail,
 ];
 
 fn store_map(tx: &Connection, fields: &str) -> rusqlite::Result<()> {

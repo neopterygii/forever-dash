@@ -363,10 +363,19 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 	let more = older.len() > limit;
 	let mut sexes: HashMap<String, Option<i64>> = HashMap::new();
 	let mut milestones: HashMap<String, Vec<crate::milestones::Milestone>> = HashMap::new();
+	type Groups = (Vec<crate::group::Span>, Vec<(String, String, Vec<crate::group::Span>)>);
+	let mut groups: HashMap<String, Groups> = HashMap::new();
 	let mut out = Vec::new();
 	for (start, end, id) in older.into_iter().take(limit) {
 		let char_id = id.as_str();
 		let sex = *sexes.entry(id.clone()).or_insert_with(|| char_sex(db, char_id));
+		if !groups.contains_key(char_id) {
+			groups.insert(id.clone(), (crate::group::spans(db, char_id)?, crate::group::others(db, char_id)?));
+		}
+		let (my_groups, other_groups) = &groups[char_id];
+		// The group as the session began (a login writes a record, so this is the one at `start`).
+		let mut group_before: Option<(i64, bool)> = crate::group::at(my_groups, start - 1.0).map(|g| (g.size, g.raid));
+		let mut gathered: HashMap<&'static str, i64> = HashMap::new();
 		let mut st = db.prepare("SELECT t, kind, map, x, y, fields FROM events WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
 		let rows = st.query_map(params![char_id, start, end], |r| {
 			Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?, r.get::<_, String>(5)?))
@@ -416,7 +425,21 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 						zones.push(z.clone());
 					}
 				}
+				"group" => {
+					let size = f.first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+					let raid = f.get(1).is_some_and(|v| v == "1");
+					// Our own characters in a group at the same moment.
+					let with: Vec<String> = other_groups.iter().filter(|o| crate::group::at(&o.2, t + 30.0).is_some()).map(|o| o.1.clone()).collect();
+					if let Some(text) = crate::group::change_line(group_before, size, raid, if size > 0 { &with } else { &[] }) {
+						events.push(json!({ "t": t, "kind": "group", "text": text, "pos": world_of(&frames, map, x, y) }));
+					}
+					group_before = Some((size, raid));
+					continue;
+				}
 				_ => {}
+			}
+			if let Some(g) = crate::milestones::gathered(&kind, &f) {
+				*gathered.entry(g).or_default() += 1;
 			}
 			if let Some(text) = describe(db, &kind, &f) {
 				let mut e = json!({ "t": t, "kind": kind, "text": text, "pos": world_of(&frames, map, x, y) });
@@ -440,7 +463,11 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 			.collect::<Result<_, _>>()?;
 		let (dist, _) = distance(db, &frames, char_id, start, end)?;
 		let diary = crate::diary::entry(db, char_id, start, end)?;
-		out.push(json!({
+		let gs = crate::group::summary(my_groups, other_groups, start, end);
+		let group = (gs.seconds > 0.0).then(|| {
+			json!({ "seconds": gs.seconds.round(), "party": gs.party, "raid": gs.raid, "with": gs.with.iter().map(|w| json!({ "char": w.0, "name": w.1 })).collect::<Vec<_>>() })
+		});
+		out.push(json!({ "group": group, "gathered": gathered,
 			"char": char_id, "start": start, "end": end, "diary": diary, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
 		}));

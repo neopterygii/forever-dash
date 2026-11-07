@@ -62,6 +62,8 @@ pub struct Facts {
 	pub quests_done: Vec<String>,
 	pub quests_taken: Vec<String>,
 	pub quests_abandoned: Vec<String>,
+	/// Quests that failed (a timer ran out, an escort died).
+	pub quests_failed: Vec<String>,
 	pub kills: i64,
 	/// The creatures killed most: (name, count), most first.
 	pub foes: Vec<(String, i64)>,
@@ -79,6 +81,18 @@ pub struct Facts {
 	/// The session's milestones, as verb phrases after "I" (milestones.rs).
 	pub firsts: Vec<String>,
 	pub yards_walked: i64,
+	/// Gathering: herbs, ore veins, creatures skinned, fish caught, locks picked.
+	pub herbs: i64,
+	pub ore: i64,
+	pub skins: i64,
+	pub fish: i64,
+	pub locks: i64,
+	/// Minutes spent in a group, the biggest party (other members) and raid (with me).
+	pub grouped_minutes: i64,
+	pub party: i64,
+	pub raid: i64,
+	/// The dashboard's other characters grouped with me at the same time.
+	pub played_with: Vec<String>,
 }
 
 fn local_tz() -> chrono_tz::Tz {
@@ -199,6 +213,7 @@ pub fn facts(db: &Connection, char_id: &str, start: f64, end: f64) -> rusqlite::
 			"accept" => push_unique(&mut f.quests_taken, quest_title(db, g(0))),
 			"turnin" => push_unique(&mut f.quests_done, quest_title(db, g(0))),
 			"abandon" => push_unique(&mut f.quests_abandoned, quest_title(db, g(0))),
+			"fail" => push_unique(&mut f.quests_failed, quest_title(db, g(0))),
 			"kill" => {
 				f.kills += 1;
 				if let Some(n) = name_of(db, "npc", g(0)) {
@@ -228,10 +243,23 @@ pub fn facts(db: &Connection, char_id: &str, start: f64, end: f64) -> rusqlite::
 			"mark" => push_unique(&mut f.marks, g(3).to_string()),
 			_ => {}
 		}
+		match crate::milestones::gathered(&kind, &v) {
+			Some("herb") => f.herbs += 1,
+			Some("ore") => f.ore += 1,
+			Some("skin") => f.skins += 1,
+			Some("fish") => f.fish += 1,
+			Some("lock") => f.locks += 1,
+			_ => {}
+		}
 	}
+	let gs = crate::group::summary(&crate::group::spans(db, char_id)?, &crate::group::others(db, char_id)?, start, end);
+	f.grouped_minutes = (gs.seconds / 60.0).round() as i64;
+	f.party = gs.party;
+	f.raid = gs.raid;
+	f.played_with = gs.with.into_iter().map(|w| w.1).collect();
 	f.firsts = crate::milestones::between(&crate::milestones::all(db, char_id)?, start, end).into_iter().map(|m| m.phrase).collect();
 	// A quest both taken and handed in is told once, as done.
-	f.quests_taken.retain(|q| !f.quests_done.contains(q));
+	f.quests_taken.retain(|q| !f.quests_done.contains(q) && !f.quests_failed.contains(q));
 	let mut foes: Vec<(String, i64)> = foes.into_iter().collect();
 	foes.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 	foes.truncate(5);
@@ -387,6 +415,12 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	if !f.quests_abandoned.is_empty() {
 		out.push(format!("I gave up on {}.", some(&f.quests_abandoned, 2, true)));
 	}
+	if !f.quests_failed.is_empty() {
+		out.push(format!("{} slipped through my fingers.", capitalize(&some(&f.quests_failed, 2, true))));
+	}
+	if let Some(s) = company(f) {
+		out.push(s);
+	}
 	// Fighting.
 	if f.kills > 0 {
 		let foes: Vec<String> = f.foes.iter().take(2).map(|(n, c)| if *c > 1 { plural(n) } else { n.clone() }).collect();
@@ -426,6 +460,9 @@ pub fn template(f: &Facts, seed: u64) -> String {
 	if f.flights > 0 {
 		out.push(format!("I flew {}.", times(f.flights)));
 	}
+	if let Some(s) = gathering(f) {
+		out.push(format!("Along the way I {s}."));
+	}
 	// Growing.
 	if !f.learned.is_empty() {
 		out.push(format!("I learned {}.", some(&f.learned, 3, false)));
@@ -454,6 +491,43 @@ pub fn template(f: &Facts, seed: u64) -> String {
 		out.push(pick(seed, 4, &["A quiet one.", "Not much else to tell.", "Little else happened."]).to_string());
 	}
 	out.join(" ")
+}
+
+/// Who I was with: "I spent most of it with Rena", "For a while I travelled with a party of three."
+fn company(f: &Facts) -> Option<String> {
+	if f.grouped_minutes < 3 {
+		return None;
+	}
+	let most = f.grouped_minutes * 3 >= f.minutes * 2;
+	let how_long = if most { "most of it" } else { "a while" };
+	let group = if f.raid > 0 { format!("a raid of {}", count(f.raid)) } else { format!("a party of {}", count(f.party + 1)) };
+	Some(if !f.played_with.is_empty() {
+		format!("I spent {how_long} with {}.", list(&f.played_with))
+	} else if most {
+		format!("I travelled with {group} for most of it.")
+	} else {
+		format!("For a while I travelled with {group}.")
+	})
+}
+
+/// "gathered twelve herbs, mined five veins and picked a lock", or None.
+fn gathering(f: &Facts) -> Option<String> {
+	let one = |n: i64, verb: &str, a: &str, many: &str| match n {
+		0 => None,
+		1 => Some(format!("{verb} {a}")),
+		_ => Some(format!("{verb} {} {many}", count(n))),
+	};
+	let parts: Vec<String> = [
+		one(f.herbs, "gathered", "a herb", "herbs"),
+		one(f.ore, "mined", "a vein", "veins"),
+		one(f.skins, "skinned", "a creature", "creatures"),
+		one(f.fish, "caught", "a fish", "fish"),
+		one(f.locks, "picked", "a lock", "locks"),
+	]
+	.into_iter()
+	.flatten()
+	.collect();
+	(!parts.is_empty()).then(|| list(&parts))
 }
 
 fn round_yards(y: i64) -> String {
@@ -511,6 +585,14 @@ fn prompt_facts(f: &Facts) -> Value {
 	if !f.quests_done.is_empty() { put("errands_finished", named(&f.quests_done, 3)); }
 	if !f.quests_taken.is_empty() { put("errands_taken_on", named(&f.quests_taken, 2)); }
 	if !f.quests_abandoned.is_empty() { put("errands_given_up", named(&f.quests_abandoned, 1)); }
+	if !f.quests_failed.is_empty() { put("errands_failed", named(&f.quests_failed, 2)); }
+	if f.grouped_minutes >= 3 {
+		let group = if f.raid > 0 { format!("a raid of {}", f.raid) } else { format!("a party of {}", f.party + 1) };
+		let mut c = json!({ "for": duration(f.grouped_minutes), "in": group });
+		if !f.played_with.is_empty() { c["with"] = json!(f.played_with); }
+		put("had_company", c);
+	}
+	if let Some(g) = gathering(f) { put("gathered", json!(g)); }
 	if f.kills > 0 {
 		let foes: Vec<String> = f.foes.iter().take(3).map(|(n, c)| if *c > 1 { plural(n) } else { n.clone() }).collect();
 		let many = match f.kills { 1 => "one".to_string(), 2..=20 => count(f.kills), _ => format!("more than {}", f.kills / 10 * 10) };

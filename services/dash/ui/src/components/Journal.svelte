@@ -70,6 +70,9 @@
 	const toggleQuest = (s: Session, e: Item) => (openQuest = openQuest === qkey(s, e) ? null : qkey(s, e));
 	const items = (s: Session): Item[] => [...s.events, ...s.notes.map((n) => ({ t: n.t, kind: 'note', text: n.text }))].sort((a, b) => b.t - a.t); // newest first, as the sessions
 	const key = (s: Session) => `s:${s.start}:${s.end}`;
+	/** Gathering counts in the facts row: (key, one, many). */
+	const GATHER = [['herb', 'herb', 'herbs'], ['ore', 'vein', 'veins'], ['skin', 'skinned', 'skinned'], ['fish', 'fish', 'fish'], ['lock', 'lock', 'locks']] as const;
+	const groupTitle = (g: NonNullable<Session['group']>) => (g.raid ? `Raid of up to ${g.raid}` : `Party of up to ${g.party + 1}`);
 	const draftKey = (s: Session) => `${s.char}:${s.start}`;
 
 	/** The map goes to the event's spot (lib/dash `focusPoint`, MapPane zooms there). */
@@ -158,6 +161,8 @@
 					{#if s.levels.length}<span>level <b>{s.levels[0] - 1} → {s.levels[s.levels.length - 1]}</b></span>{/if}
 					<span><b>{s.quests}</b> quests</span><span><b>{s.kills}</b> kills</span><span><b>{s.deaths}</b> deaths</span>
 					<span><b>{(s.yards / 1000).toFixed(1)}k</b> yd walked</span>
+					{#if s.group}<span title={groupTitle(s.group)}><b>{Math.round(s.group.seconds / 60)} min</b> {s.group.with.length ? `with ${s.group.with.map((w) => w.name).join(', ')}` : 'grouped'}</span>{/if}
+					{#each GATHER as [k, one, many] (k)}{#if s.gathered[k]}<span><b>{s.gathered[k]}</b> {s.gathered[k] === 1 ? one : many}</span>{/if}{/each}
 				</div>
 				<button class="logt" aria-expanded={!!logOpen[sessionKey(s)]} onclick={() => (logOpen[sessionKey(s)] = !logOpen[sessionKey(s)])}>
 					<i class:on={logOpen[sessionKey(s)]}></i>{logOpen[sessionKey(s)] ? 'Hide the log' : `The log · ${items(s).length} ${items(s).length === 1 ? 'entry' : 'entries'}`}
@@ -240,6 +245,8 @@
 	.k-level .ji { background: var(--success); }
 	.k-accept .ji, .k-turnin .ji { background: var(--quest); }
 	.k-mark .ji, .k-note .ji { background: var(--accent); }
+	.k-fail .ji, .k-abandon .ji { background: var(--quest); opacity: 0.5; }
+	.k-group .ji { background: var(--accent); border-radius: 2px; }
 	/* Milestones (a first, a round number): a star, and the line a little stronger. */
 	.k-milestone .ji { width: 12px; height: 12px; border-radius: 0; background: var(--accent); mask: url(/glyph/star.png) center / contain no-repeat; -webkit-mask: url(/glyph/star.png) center / contain no-repeat; }
 	.k-milestone span { font-weight: 600; color: var(--accent); }

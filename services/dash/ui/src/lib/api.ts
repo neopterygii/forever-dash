@@ -140,6 +140,10 @@ export interface Session {
 	deaths: number;
 	levels: number[];
 	yards: number;
+	/** Time spent grouped; null when solo throughout. `with`: this dashboard's characters grouped at the same time. */
+	group: { seconds: number; party: number; raid: number; with: { char: string; name: string }[] } | null;
+	/** Gathering counts: herb, ore, skin, fish, lock (absent kinds are zero). */
+	gathered: Partial<Record<'herb' | 'ore' | 'skin' | 'fish' | 'lock', number>>;
 	events: Omit<DashEvent, 'char'>[];
 	notes: { id: number; t: number; text: string }[];
 }

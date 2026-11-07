@@ -40,6 +40,26 @@ const RANKS: &[(i64, &str)] = &[(150, "Journeyman"), (225, "Expert"), (300, "Art
 const SKILL_STEPS: &[i64] = &[75, 150, 225, 300];
 const QUEST_COUNTS: &[i64] = &[1, 10, 25, 50, 100, 200, 300, 500, 750, 1000];
 const KILL_COUNTS: &[i64] = &[100, 500, 1000, 2500, 5000, 10000, 25000];
+const GATHER_COUNTS: &[i64] = &[100, 250, 500, 1000, 2500, 5000];
+
+/// What a gathering record was: `loot` from a herb, a vein, a skinned creature or a catch, or a
+/// lock picked (the `gather` record: a lock gives no `loot` gather token). None for anything else.
+pub fn gathered(kind: &str, f: &[String]) -> Option<&'static str> {
+	let g = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
+	match kind {
+		// loot: srcKind, srcId, P (2-4), gather
+		"loot" => match g(5) {
+			"h" => Some("herb"),
+			"m" => Some("ore"),
+			"s" => Some("skin"),
+			"f" => Some("fish"),
+			_ => None,
+		},
+		// gather: objectId, P (1-3), how
+		"gather" if g(4) == "l" => Some("lock"),
+		_ => None,
+	}
+}
 
 fn ordinal(n: i64) -> String {
 	let suffix = match (n % 10, n % 100) {
@@ -64,19 +84,40 @@ pub fn all(db: &Connection, char_id: &str) -> rusqlite::Result<Vec<Milestone>> {
 	let mut seen_instances: HashSet<String> = HashSet::new();
 	let mut skills: HashMap<i64, (i64, i64)> = HashMap::new(); // line -> (rank, max) last seen
 	let (mut quests, mut kills) = (0i64, 0i64);
+	let mut gathers: HashMap<&'static str, i64> = HashMap::new();
 	let (mut died, mut flew, mut elite, mut rare, mut boss, mut won) = (false, false, false, false, false, false);
 	let mut zone_cache = HashMap::new();
 
 	let mut st = db.prepare(
 		"SELECT t, kind, fields, map FROM events WHERE char_id = ?1
-		 AND kind IN ('loot', 'skill', 'zone', 'enter', 'encounter', 'taxi', 'death', 'kill', 'turnin', 'level') ORDER BY t",
+		 AND kind IN ('loot', 'gather', 'skill', 'zone', 'enter', 'encounter', 'taxi', 'death', 'kill', 'turnin', 'level') ORDER BY t",
 	)?;
 	let rows = st.query_map(params![char_id], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<i64>>(3)?)))?;
 	for row in rows {
 		let (t, kind, fields, map) = row?;
 		let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
 		let g = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
+		if let Some(what) = gathered(&kind, &f) {
+			let n = gathers.entry(what).or_default();
+			*n += 1;
+			if GATHER_COUNTS.contains(n) {
+				// (the log's words after "100th", the diary's verb and noun)
+				let (log, verb, noun) = match what {
+					"herb" => ("herb gathered", "gathered", "herb"),
+					"ore" => ("ore vein mined", "mined", "vein"),
+					"skin" => ("creature skinned", "skinned", "creature"),
+					"fish" => ("fish caught", "caught", "fish"),
+					_ => ("lock picked", "picked", "lock"),
+				};
+				let nth = ordinal(*n);
+				push(t, "count", format!("{nth} {log}"), format!("{verb} my {nth} {noun}"));
+			}
+		}
 		match kind.as_str() {
+			// gather: objectId, P, how ("l" a lock picked; herbs, ore and fish come from loot)
+			"gather" if g(4) == "l" && gathers.get("lock") == Some(&1) => {
+				push(t, "gather", "First lock picked".into(), "picked my first lock".into());
+			}
 			// loot: srcKind, srcId, P (3), gather, items, wanted
 			"loot" => {
 				let gather = g(5);
@@ -272,6 +313,19 @@ mod tests {
 		assert_eq!(got[1].1, "mined my first ore (Copper Vein)");
 		assert_eq!(got[2].1, "found a Tin Vein for the first time");
 		assert_eq!(got[8].1, "brought down my first elite (Hogger)");
+	}
+
+	#[test]
+	fn locks_and_gathering_counts() {
+		let mut ev: Vec<(f64, &str, String)> = vec![(0.5, "gather", r#"["1","1412","10","10","l","633","40"]"#.into())];
+		for i in 0..100 {
+			ev.push((1.0 + i as f64, "loot", r#"["o","1617","1412","10","10","h","765:1",""]"#.into()));
+		}
+		let db = db_with(&ev.iter().map(|(t, k, f)| (*t, *k, f.as_str())).collect::<Vec<_>>());
+		let got: Vec<(String, String)> = all(&db, "c").unwrap().into_iter().map(|m| (m.text, m.phrase)).collect();
+		assert_eq!(got[0], ("First lock picked".into(), "picked my first lock".into()));
+		assert_eq!(got[1].0, "First herb gathered: Silverleaf");
+		assert_eq!(got.last().unwrap(), &("100th herb gathered".into(), "gathered my 100th herb".into()));
 	}
 
 	#[test]
