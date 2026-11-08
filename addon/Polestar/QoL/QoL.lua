@@ -52,13 +52,24 @@ local function naowh(key)
 	end
 end
 
+local naowhFastLoot, naowhHideLootWindow = naowh("fastLoot"), naowh("hideLootWindow")
+local function naowhLoot()
+	if naowhFastLoot() then return true end
+	-- Hide Loot Window takes the slots too, unless it stands down for gamepad.
+	if not naowhHideLootWindow() then return false end
+	local standDown = _G.NaowhForever.GamepadStandDown
+	if type(standDown) ~= "function" then return true end
+	local ok, off = pcall(standDown)
+	return ok and not off
+end
+
 local function always() return true end
 
 local COVERED = {
 	sellJunk = { { "EllesmereUIQoL", eui("autoSellJunk", true) }, { "NaowhForever_QoL", naowh("sellJunk") } },
 	autoRepair = { { "EllesmereUIQoL", eui("autoRepair", true) }, { "NaowhForever_QoL", naowh("autoRepair") } },
 	repairGuild = { { "EllesmereUIQoL", euiGuildRepair } }, -- Use Guild Bank Funds
-	fastLoot = { { "EllesmereUIQoL", eui("quickLoot", false) }, { "NaowhForever_QoL", naowh("fastLoot") } },
+	fastLoot = { { "EllesmereUIQoL", eui("quickLoot", false) }, { "NaowhForever_QoL", naowhLoot } },
 	skipGossip = { { "EllesmereUIQoL", eui("autoGossip", false) }, { "NaowhForever_QoL", naowh("gossipAuto") } },
 	hideErrors = { { "EllesmereUIQoL", eui("hideErrorMessages", false) }, { "NaowhForever_QoL", naowh("hideErrors") } },
 	acceptPartyFriends = { { "EllesmereUIFriends", always } }, -- auto-accept invites from friends

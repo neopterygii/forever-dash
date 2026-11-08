@@ -3779,6 +3779,48 @@ fn naowh_forever_qol_overlapping_toggles_start_off_while_its_own_setting_for_the
 }
 
 #[test]
+fn naowh_hidden_loot_window_also_covers_fast_loot_but_disabled_jobs_and_player_choices_do_not() {
+	let script = r#"
+		q.loot = 3
+		stub.fire("LOOT_READY", true)
+		emit({ covered = QoL.CoveredBy("fastLoot") or false, on = QoL.On("fastLoot"), slots = table.concat(calls("LootSlot"), ",") })
+	"#;
+	for (settings, addon_disabled, saved, covered, on) in [
+		("fastLoot = false, hideLootWindow = true", false, None, true, false),
+		("fastLoot = true, hideLootWindow = false", false, None, true, false),
+		("fastLoot = false, hideLootWindow = false", false, None, false, true),
+		("enabled = false, fastLoot = false, hideLootWindow = true", false, None, false, true),
+		("fastLoot = false, hideLootWindow = true", true, None, false, true),
+		("fastLoot = false, hideLootWindow = true", false, Some(true), true, true),
+		("fastLoot = false, hideLootWindow = false", false, Some(false), false, false),
+	] {
+		let mut before = naowh(settings);
+		if addon_disabled {
+			before.push_str("; stub.addonsLoaded.NaowhForever_QoL = nil; stub.qol.installed.NaowhForever_QoL = false");
+		}
+		let saved = saved.map(|v| format!("PolestarDB = {{ schema = 1, settings = {{ qol = {{ fastLoot = {v} }} }} }}"));
+		let out = run_with(script, &before, saved.as_deref());
+		assert_eq!(out[0]["covered"], if covered { json!("NaowhForever_QoL") } else { json!(false) }, "{settings}, disabled={addon_disabled}, saved={saved:?}");
+		assert_eq!(out[0]["on"], on, "{settings}, disabled={addon_disabled}, saved={saved:?}");
+		assert_eq!(out[0]["slots"], if on { "3,2,1" } else { "" }, "{settings}, disabled={addon_disabled}, saved={saved:?}");
+	}
+
+	for (settings, gamepad, covered) in [
+		("fastLoot = false, hideLootWindow = true", false, true),
+		("fastLoot = false, hideLootWindow = true", true, false),
+		("fastLoot = true, hideLootWindow = true", true, true),
+		("enabled = false, fastLoot = false, hideLootWindow = true", false, false),
+		("enabled = false, fastLoot = false, hideLootWindow = true", true, false),
+	] {
+		let before = format!("{}; NaowhForever.GamepadStandDown = function() return {gamepad} end", naowh(settings));
+		let out = run_with(script, &before, None);
+		assert_eq!(out[0]["covered"], if covered { json!("NaowhForever_QoL") } else { json!(false) }, "{settings}, gamepad={gamepad}");
+		assert_eq!(out[0]["on"], !covered, "{settings}, gamepad={gamepad}");
+		assert_eq!(out[0]["slots"], if covered { "" } else { "3,2,1" }, "{settings}, gamepad={gamepad}");
+	}
+}
+
+#[test]
 fn merchant_guild_bank_first_when_allowed_no_affordability_gate_as_blizzard_s_button_else_your_own_money() {
 	let out = run(r#"
 		local function visit() q.calls = {}; q.openMerchant(); stub.advance(1); local c = calls("RepairAllItems"); q.closeMerchant(); return c[1] or "none" end
