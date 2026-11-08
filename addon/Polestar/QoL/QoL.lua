@@ -15,24 +15,65 @@ ns.QoL = QoL
 local type, pairs, select, tonumber = type, pairs, select, tonumber
 local floor, format = math.floor, string.format
 
--- EllesmereUI modules that already do some of these jobs (docs/SUITE.md,
--- "Modules": Polestar integrates with EllesmereUI, never fights it). While
--- the module is installed and enabled for this character, the overlapping
--- toggle defaults to off; the player can still turn it on.
+-- Other suites' modules that already do some of these jobs (docs/SUITE.md,
+-- "Modules": Polestar integrates with EllesmereUI, never fights it; Naowh
+-- Forever the same). While the module is installed and enabled for this
+-- character and its own setting for the job is on, the overlapping toggle
+-- defaults to off; the player can still turn it on. A module whose setting
+-- for the job is off (EllesmereUI's Quick Loot and Auto Select Single Gossip
+-- start off) leaves the toggle on, so the job is still done.
+--
+-- EllesmereUI keeps its QoL settings in EllesmereUIDB (SavedVariables of
+-- EllesmereUI, an OptionalDep), unset meaning its default. Naowh Forever's
+-- are read through NaowhForever.QoLSettings.Get, its settings store (with its
+-- master switch "enabled"); NaowhForever is an OptionalDep so it is loaded.
+-- Nothing of theirs is written.
+local function eui(key, default)
+	return function()
+		local db = _G.EllesmereUIDB
+		local v = nil
+		if type(db) == "table" then v = db[key] end
+		if v == nil then return default end
+		return v and true or false
+	end
+end
+
+local function euiGuildRepair()
+	return eui("autoRepair", true)() and eui("autoRepairGuild", true)()
+end
+
+local function naowh(key)
+	return function()
+		local n = _G.NaowhForever
+		local S = type(n) == "table" and n.QoLSettings
+		if type(S) ~= "table" or type(S.Get) ~= "function" then return false end
+		local ok, on = pcall(function() return S.Get("enabled") and S.Get(key) end)
+		return ok and on and true or false
+	end
+end
+
+local function always() return true end
+
 local COVERED = {
-	sellJunk = "EllesmereUIQoL",           -- Auto Sell Junk
-	autoRepair = "EllesmereUIQoL",         -- Auto Repair
-	repairGuild = "EllesmereUIQoL",        -- Use Guild Bank Funds
-	fastLoot = "EllesmereUIQoL",           -- Quick Loot
-	skipGossip = "EllesmereUIQoL",         -- Auto Select Single Gossip
-	hideErrors = "EllesmereUIQoL",         -- Hide Error Messages
-	acceptPartyFriends = "EllesmereUIFriends", -- auto-accept invites from friends
+	sellJunk = { { "EllesmereUIQoL", eui("autoSellJunk", true) }, { "NaowhForever_QoL", naowh("sellJunk") } },
+	autoRepair = { { "EllesmereUIQoL", eui("autoRepair", true) }, { "NaowhForever_QoL", naowh("autoRepair") } },
+	repairGuild = { { "EllesmereUIQoL", euiGuildRepair } }, -- Use Guild Bank Funds
+	fastLoot = { { "EllesmereUIQoL", eui("quickLoot", false) }, { "NaowhForever_QoL", naowh("fastLoot") } },
+	skipGossip = { { "EllesmereUIQoL", eui("autoGossip", false) }, { "NaowhForever_QoL", naowh("gossipAuto") } },
+	hideErrors = { { "EllesmereUIQoL", eui("hideErrorMessages", false) }, { "NaowhForever_QoL", naowh("hideErrors") } },
+	acceptPartyFriends = { { "EllesmereUIFriends", always } }, -- auto-accept invites from friends
 }
 
--- The EllesmereUI module doing `key`'s job, when it is there; nil otherwise.
+-- The other module doing `key`'s job, when it is there and its setting for
+-- the job is on; nil otherwise.
 function QoL.CoveredBy(key)
-	local name = COVERED[key]
-	return name and ns.Compat.AddOnPresent(name) and name or nil
+	local by = COVERED[key]
+	if not by then return nil end
+	for i = 1, #by do
+		local name, on = by[i][1], by[i][2]
+		if ns.Compat.AddOnPresent(name) and on() then return name end
+	end
+	return nil
 end
 
 local defaults = {

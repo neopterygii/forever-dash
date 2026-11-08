@@ -16,11 +16,14 @@ local function register(page, tab, section, controls)
 	if not ok and geterrorhandler then geterrorhandler()(err) end
 end
 
--- Help for a toggle EllesmereUI may cover: says why it starts off.
+-- Help for a toggle another suite may cover: says why it starts off.
+local SUITE_NAMES = { NaowhForever_QoL = "Naowh Forever QoL" }
+
 local function help(key, text)
 	local by = QoL.CoveredBy(key)
 	if not by then return text end
-	return text .. " " .. string.format(L["Off by default: %s does this too."], (by:gsub("^EllesmereUI", "EllesmereUI ")))
+	local name = SUITE_NAMES[by] or by:gsub("^EllesmereUI", "EllesmereUI ")
+	return text .. " " .. string.format(L["Off by default: %s does this too."], name)
 end
 
 local function repairOff() return not QoL.On("autoRepair") end

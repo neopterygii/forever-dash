@@ -3712,12 +3712,29 @@ fn ellesmereui_overlapping_toggles_start_off_while_its_module_is_installed_and_e
 	);
 	assert!(!is_match(text(&none["help"]), r"EllesmereUI"));
 
-	let loaded = covered_defaults("stub.addonsLoaded.EllesmereUI = true; stub.addonsLoaded.EllesmereUIQoL = true", None);
-	for k in COVERED_KEYS {
+	// EllesmereUI's own defaults (nothing in EllesmereUIDB): it sells junk and
+	// repairs (guild bank first), but Quick Loot, Auto Select Single Gossip
+	// and Hide Error Messages start off there, so Polestar keeps doing those.
+	let loaded = covered_defaults("stub.addonsLoaded.EllesmereUI = true; stub.addonsLoaded.EllesmereUIQoL = true; stub.addonsLoaded.EllesmereUIFriends = true", None);
+	for k in ["sellJunk", "autoRepair", "repairGuild", "acceptPartyFriends"] {
 		assert_eq!(loaded[k], false, "{k} off with EllesmereUI QoL");
 	}
+	assert_eq!(json!([loaded["fastLoot"].clone(), loaded["skipGossip"].clone(), loaded["hideErrors"].clone()]), json!([true, true, false]), "EllesmereUI's off-by-default jobs stay Polestar's");
 	assert_eq!(loaded["instantQuestText"], true, "what EllesmereUI does not do stays on");
 	assert!(is_match(text(&loaded["help"]), r"Off by default: EllesmereUI QoL does this too\."));
+
+	// Turned on there, off here; turned off there, on here.
+	let on = covered_defaults(
+		"stub.addonsLoaded.EllesmereUIQoL = true; EllesmereUIDB = { quickLoot = true, autoGossip = true, hideErrorMessages = true, autoSellJunk = false, autoRepairGuild = false }",
+		None,
+	);
+	assert_eq!(
+		json!([on["fastLoot"].clone(), on["skipGossip"].clone(), on["hideErrors"].clone(), on["sellJunk"].clone(), on["autoRepair"].clone(), on["repairGuild"].clone()]),
+		json!([false, false, false, true, false, false])
+	);
+	assert!(!is_match(text(&on["help"]), r"EllesmereUI"), "sell junk is off in EllesmereUI: no note");
+	let no_repair = covered_defaults("stub.addonsLoaded.EllesmereUIQoL = true; EllesmereUIDB = { autoRepair = false }", None);
+	assert_eq!(json!([no_repair["autoRepair"].clone(), no_repair["repairGuild"].clone()]), json!([true, false]), "guild repair needs EllesmereUI's repair on; Polestar's own default is off");
 
 	let later = covered_defaults("stub.qol.installed.EllesmereUIQoL = true", None);
 	assert_eq!(later["sellJunk"], false, "enabled but loading after Polestar counts");
@@ -3726,6 +3743,39 @@ fn ellesmereui_overlapping_toggles_start_off_while_its_module_is_installed_and_e
 
 	let mine = covered_defaults("stub.addonsLoaded.EllesmereUIQoL = true", Some("PolestarDB = { schema = 1, settings = { qol = { sellJunk = true } } }"));
 	assert_eq!(mine["sellJunk"], true);
+}
+
+// Naowh Forever's settings store, as NaowhForever.QoLSettings.Get reads it
+// (unset: its defaults, which sell junk, repair and loot fast).
+fn naowh(settings: &str) -> String {
+	format!(
+		"stub.addonsLoaded.NaowhForever = true; stub.addonsLoaded.NaowhForever_QoL = true
+		local d = {{ enabled = true, sellJunk = true, autoRepair = true, fastLoot = true, gossipAuto = false, hideErrors = false }}
+		for k, v in pairs({{ {settings} }}) do d[k] = v end
+		NaowhForever = {{ QoLSettings = {{ Get = function(k) return d[k] end }} }}"
+	)
+}
+
+#[test]
+fn naowh_forever_qol_overlapping_toggles_start_off_while_its_own_setting_for_the_job_is_on() {
+	let defaults = covered_defaults(&naowh(""), None);
+	assert_eq!(
+		json!([defaults["sellJunk"].clone(), defaults["autoRepair"].clone(), defaults["fastLoot"].clone(), defaults["skipGossip"].clone(), defaults["repairGuild"].clone()]),
+		json!([false, false, false, true, false])
+	);
+	assert!(is_match(text(&defaults["help"]), r"Off by default: Naowh Forever QoL does this too\."));
+
+	let gossip = covered_defaults(&naowh("gossipAuto = true, sellJunk = false"), None);
+	assert_eq!(json!([gossip["skipGossip"].clone(), gossip["sellJunk"].clone()]), json!([false, true]));
+
+	let master_off = covered_defaults(&naowh("enabled = false"), None);
+	assert_eq!(json!([master_off["sellJunk"].clone(), master_off["fastLoot"].clone()]), json!([true, true]), "Naowh's QoL switched off does nothing");
+
+	let core_only = covered_defaults("stub.addonsLoaded.NaowhForever_QoL = true", None);
+	assert_eq!(core_only["sellJunk"], true, "no settings store to read: nothing covered");
+
+	let mine = covered_defaults(&naowh(""), Some("PolestarDB = { schema = 1, settings = { qol = { fastLoot = true } } }"));
+	assert_eq!(mine["fastLoot"], true, "your own choice wins");
 }
 
 #[test]
