@@ -44,6 +44,7 @@ export const PIN: Record<string, [string, string]> = {
 	learn: ['icon-learn', 'spell'],
 	rare: ['icon-kill', 'rare'],
 	abandon: ['cross', 'textDim'],
+	milestone: ['star', 'accent'],
 };
 
 /** Hours: "Last session" covers at least this much play. */

@@ -17,6 +17,10 @@ pub const SESSION_GAP: f64 = 30.0 * 60.0;
 const TRAIL_GAP: f64 = 120.0;
 /// Positions further apart than this (yards) are a teleport, not a walk: the line breaks.
 const TRAIL_JUMP: f64 = 400.0;
+/// Positions this close (yards) belong to one line however long between them (within a session):
+/// the character stood about (a fight, a vendor, reading quest text) and the Recorder, which samples
+/// every 25 yards, wrote nothing new. A hearthstone or a portal lands much further away.
+const TRAIL_STILL: f64 = 40.0;
 
 #[derive(Clone, Copy)]
 pub struct Frame {
@@ -183,8 +187,9 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 		let (ghost, mounted) = (flags & 32 != 0, flags & 1 != 0 && flags & 32 == 0);
 		let near = runs.last().map(|r| {
 			let (lx, ly) = *r.pts.last().unwrap();
-			let close = ((wx - lx).powi(2) + (wy - ly).powi(2)).sqrt() <= TRAIL_JUMP;
-			(r.c == f.c && t - r.ts.last().unwrap() <= TRAIL_GAP, close, r.ghost == ghost, r.mounted == mounted)
+			let (d, dt) = (((wx - lx).powi(2) + (wy - ly).powi(2)).sqrt(), t - r.ts.last().unwrap());
+			let still = d <= TRAIL_STILL && dt <= SESSION_GAP;
+			(r.c == f.c && (dt <= TRAIL_GAP || still), d <= TRAIL_JUMP, r.ghost == ghost, r.mounted == mounted)
 		});
 		let cont = near.is_some_and(|(n, close, g, m)| n && close && g && m);
 		if !cont {
@@ -379,6 +384,13 @@ pub fn events(db: &Connection, char_id: Option<&str>, from: f64, to: f64, kinds:
 			out.push(e);
 		}
 	}
+	// A character's milestones (its firsts, round numbers) where they happened, when asked for.
+	if let Some(ch) = char_id.filter(|_| kinds.contains(&"milestone")) {
+		for m in crate::milestones::between(&crate::milestones::all(db, ch)?, from, to) {
+			out.push(json!({ "char": ch, "t": m.t, "kind": "milestone", "milestone": m.kind, "text": m.text, "pos": world_of(&frames, m.at.0, m.at.1, m.at.2) }));
+		}
+		out.sort_by(|a, b| a["t"].as_f64().unwrap_or(0.0).total_cmp(&b["t"].as_f64().unwrap_or(0.0)));
+	}
 	Ok(out)
 }
 
@@ -396,7 +408,7 @@ pub fn overview(db: &Connection, hours: f64, tol: f64, ids: &[String]) -> rusqli
 		let from = playtime_from(&sess, hours);
 		let to = sess.last().unwrap().1;
 		let (segs, total) = trail(db, &id, from, to, tol)?;
-		let ev = events(db, Some(&id), from, to, &["level", "death", "mark", "encounter", "enter"])?;
+		let ev = events(db, Some(&id), from, to, &["level", "death", "mark", "encounter", "enter", "milestone"])?;
 		let sess_in: Vec<Value> = sess.iter().filter(|s| s.1 >= from).map(|s| json!([s.0.max(from), s.1])).collect();
 		out.push(json!({ "char": id, "from": from, "to": to, "sessions": sess_in, "segments": segs, "points": total, "events": ev }));
 	}
@@ -556,7 +568,7 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 			milestones.insert(id.clone(), crate::milestones::all(db, char_id)?);
 		}
 		for m in crate::milestones::between(&milestones[char_id], start, end) {
-			events.push(json!({ "t": m.t, "kind": "milestone", "milestone": m.kind, "text": m.text, "pos": Value::Null }));
+			events.push(json!({ "t": m.t, "kind": "milestone", "milestone": m.kind, "text": m.text, "pos": world_of(&frames, m.at.0, m.at.1, m.at.2) }));
 		}
 		events.sort_by(|a, b| a["t"].as_f64().unwrap_or(0.0).total_cmp(&b["t"].as_f64().unwrap_or(0.0)));
 		let mut nst = db.prepare("SELECT id, t, text FROM notes WHERE char_id = ?1 AND t >= ?2 AND t <= ?3 ORDER BY t")?;
@@ -900,6 +912,21 @@ mod quest_text_tests {
 		let f = &segs[3];
 		assert_eq!(f.ts, vec![44.0, 200.0]);
 		assert_eq!(f.pts, vec![500.0, 180.0, 900.0, 900.0]);
+	}
+
+	#[test]
+	fn standing_about_keeps_the_line_whole() {
+		let db = crate::db::open(":memory:").unwrap();
+		db.execute("INSERT INTO maps (id, type, parent, c, top, left, bottom, right) VALUES (1, 3, 0, 0, 0, 0, 1000, 1000)", []).unwrap();
+		let pos = |t: f64, x: i64| db.execute("INSERT INTO positions VALUES ('a', ?1, 1, ?2, 5000, 0)", params![t, x]).unwrap();
+		// walking, five minutes in a fight 10 yards on, walking on; then, after five minutes, 100 yards away
+		pos(0.0, 1000);
+		pos(2.0, 1250);
+		pos(302.0, 1350);
+		pos(304.0, 1600);
+		pos(604.0, 2600);
+		let (segs, _) = trail(&db, "a", 0.0, 1e9, 0.0).unwrap();
+		assert_eq!(segs.iter().map(|s| s.ts.len()).collect::<Vec<_>>(), vec![4, 1]);
 	}
 
 	#[test]

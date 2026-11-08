@@ -78,6 +78,10 @@ export interface DashEvent {
 	/** On a meeting with another player (kind `met`): how, and who ("Name-Realm"). */
 	how?: string;
 	person?: string;
+	/** On a milestone (kind `milestone`): what kind (gather, profession, place, travel, fight, count, level). */
+	milestone?: string;
+	/** Map only: the milestone this event also was ("First death"). */
+	first?: string;
 }
 
 export interface JournalPage {

@@ -18,6 +18,9 @@ pub struct Milestone {
 	pub text: String,
 	/// The diary's words for it, a verb phrase after "I" ("mined my first ore, a Copper Vein").
 	pub phrase: String,
+	/// Where it happened (the event's map and position), when the record has one.
+	#[serde(skip)]
+	pub at: (Option<i64>, Option<i64>, Option<i64>),
 }
 
 /// Professions by skill line (the client's SkillLine ids, the same on every Classic-era client).
@@ -76,7 +79,9 @@ fn ordinal(n: i64) -> String {
 pub fn all(db: &Connection, char_id: &str) -> rusqlite::Result<Vec<Milestone>> {
 	let name = |kind: &str, id: &str| crate::names::name(db, kind, id);
 	let mut out = Vec::new();
-	let mut push = |t: f64, kind: &'static str, text: String, phrase: String| out.push(Milestone { t, kind, text, phrase });
+	// The record being read: where each milestone found in it happened.
+	let here = std::cell::Cell::new((None, None, None));
+	let mut push = |t: f64, kind: &'static str, text: String, phrase: String| out.push(Milestone { t, kind, text, phrase, at: here.get() });
 
 	let mut seen_gather: HashSet<&'static str> = HashSet::new();
 	let mut seen_nodes: HashSet<String> = HashSet::new();
@@ -89,12 +94,15 @@ pub fn all(db: &Connection, char_id: &str) -> rusqlite::Result<Vec<Milestone>> {
 	let mut zone_cache = HashMap::new();
 
 	let mut st = db.prepare(
-		"SELECT t, kind, fields, map FROM events WHERE char_id = ?1
+		"SELECT t, kind, fields, map, x, y FROM events WHERE char_id = ?1
 		 AND kind IN ('loot', 'gather', 'skill', 'zone', 'enter', 'encounter', 'taxi', 'death', 'kill', 'turnin', 'level') ORDER BY t",
 	)?;
-	let rows = st.query_map(params![char_id], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<i64>>(3)?)))?;
+	let rows = st.query_map(params![char_id], |r| {
+		Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<i64>>(3)?, r.get::<_, Option<i64>>(4)?, r.get::<_, Option<i64>>(5)?))
+	})?;
 	for row in rows {
-		let (t, kind, fields, map) = row?;
+		let (t, kind, fields, map, x, y) = row?;
+		here.set((map, x, y));
 		let f: Vec<String> = serde_json::from_str(&fields).unwrap_or_default();
 		let g = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
 		if let Some(what) = gathered(&kind, &f) {
@@ -251,6 +259,13 @@ pub fn all(db: &Connection, char_id: &str) -> rusqlite::Result<Vec<Milestone>> {
 				}
 			}
 			_ => {}
+		}
+	}
+	// A record without a place (a skill rising): where the character was then, within two minutes.
+	let mut near = db.prepare("SELECT map, x, y FROM positions WHERE char_id = ?1 AND t BETWEEN ?2 - 120 AND ?2 + 120 ORDER BY ABS(t - ?2) LIMIT 1")?;
+	for m in out.iter_mut().filter(|m| m.at.0.is_none() || m.at.1.is_none()) {
+		if let Ok(at) = near.query_row(params![char_id, m.t], |r| Ok((Some(r.get(0)?), Some(r.get(1)?), Some(r.get(2)?)))) {
+			m.at = at;
 		}
 	}
 	Ok(out)

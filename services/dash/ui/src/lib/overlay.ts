@@ -14,11 +14,15 @@ export interface OverlayLine {
 	color: string;
 	faint: boolean;
 	style: LineStyle;
+	/** The points either side of this line when the trail goes on through its ends (walking into
+	 *  riding, the replay's past into its future): the curve keeps its direction across the join. */
+	pre?: [number, number];
+	post?: [number, number];
 }
 /** How far (world yards) a smoothed trail may bow away from the straight line between two recorded points. */
-export const SMOOTH_YD = 3;
+export const SMOOTH_YD = 4;
 /** Turns sharper than this (radians between the way in and the way out) stay corners: a real turnaround. */
-const SHARP_TURN = (100 * Math.PI) / 180;
+const SHARP_TURN = (135 * Math.PI) / 180;
 
 /**
  * Rounds a trail's corners without moving it: the curve passes through every point it was given
@@ -27,8 +31,10 @@ const SHARP_TURN = (100 * Math.PI) / 180;
  * lies within its control points, which are clamped to that band and to half the piece's length).
  * Sharp turns stay sharp. Returned as a polyline (each piece in steps of about 4 px), so the
  * stroke and the direction chevrons follow the same line. maxDev < 0.5 px: the points as given.
+ * `pre` and `post`: the points before the first and after the last when the trail goes on there
+ * (used for the direction at the ends only; nothing is drawn towards them).
  */
-export function smooth(p: [number, number][], maxDev: number): [number, number][] {
+export function smooth(p: [number, number][], maxDev: number, pre?: [number, number], post?: [number, number]): [number, number][] {
 	if (p.length < 3 || !(maxDev >= 0.5)) return p;
 	const out: [number, number][] = [p[0]];
 	const dist = (u: [number, number], v: [number, number]) => Math.hypot(v[0] - u[0], v[1] - u[1]);
@@ -54,7 +60,7 @@ export function smooth(p: [number, number][], maxDev: number): [number, number][
 	};
 	for (let i = 0; i + 1 < p.length; i++) {
 		const p1 = p[i], p2 = p[i + 1];
-		const p0 = p[i - 1] ?? p1, p3 = p[i + 2] ?? p2;
+		const p0 = p[i - 1] ?? pre ?? p1, p3 = p[i + 2] ?? post ?? p2;
 		const d1 = Math.sqrt(dist(p0, p1)), d2 = Math.sqrt(dist(p1, p2)), d3 = Math.sqrt(dist(p2, p3));
 		if (d2 < 1e-6) continue;
 		let c1: [number, number] = p1, c2: [number, number] = p2;
@@ -86,6 +92,8 @@ export interface OverlayEvent {
 	kind: string;
 	/** A starburst's number (the level reached). */
 	label?: string;
+	/** The event was also a first (its milestone's line): a small star on its badge. */
+	first?: string;
 	color: string;
 	data?: unknown;
 }
@@ -150,7 +158,7 @@ const RESIMPLIFY_PX = 0.5;
 type Affine = { x0: number; y0: number; ax: number; ay: number; bx: number; by: number; wx0: number; wy0: number };
 
 const CHEVRON_EVERY = 64; // px between direction chevrons
-/** Zoom (CSS px per yard) from which event badges show; level starbursts from LEVELS_FROM. Further
+/** Zoom (CSS px per yard) from which event badges show; level starbursts and firsts from LEVELS_FROM. Further
  *  out they would pile up into clutter at world scale. */
 const EVENTS_FROM = 0.06;
 const LEVELS_FROM = 0.035;
@@ -303,7 +311,8 @@ export class TrailOverlay {
 		if (raw.length < 2) return;
 		const flight = l.style === 'flight', ghost = l.style === 'ghost', mount = l.style === 'mount';
 		// A flight is a straight guess between take-off and landing: never bent.
-		const pts = flight ? raw : smooth(raw, SMOOTH_YD * pxPerYd);
+		const side = (q?: [number, number]) => (q ? (proj(l.c, q[0], q[1]) ?? undefined) : undefined);
+		const pts = flight ? raw : smooth(raw, SMOOTH_YD * pxPerYd, side(l.pre), side(l.post));
 		const ctx = this.ctx;
 		const path = (from = 0, to = pts.length - 1) => {
 			ctx.beginPath();
@@ -389,8 +398,27 @@ export class TrailOverlay {
 		ctx.restore();
 	}
 
+	/** A pale five-pointed star (a milestone), centred on x, y with outer radius r. */
+	private star(x: number, y: number, r: number) {
+		const ctx = this.ctx;
+		ctx.save();
+		ctx.beginPath();
+		for (let i = 0; i < 10; i++) {
+			const rr = i % 2 ? r * 0.45 : r;
+			const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+			ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+		}
+		ctx.closePath();
+		ctx.fillStyle = '#fff1c2';
+		ctx.strokeStyle = 'rgba(40, 24, 0, 0.9)';
+		ctx.lineWidth = 1.4;
+		ctx.fill();
+		ctx.stroke();
+		ctx.restore();
+	}
+
 	private event(e: OverlayEvent, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
-		if (this.zoom < (e.kind === 'level' ? LEVELS_FROM : EVENTS_FROM)) return;
+		if (this.zoom < (e.kind === 'level' || e.kind === 'milestone' ? LEVELS_FROM : EVENTS_FROM)) return;
 		const p = proj(e.c, e.wx, e.wy);
 		if (!p || p[0] < -30 || p[1] < -30 || p[0] > this.w + 30 || p[1] > this.h + 30) return;
 		const [x, y] = p;
@@ -418,7 +446,15 @@ export class TrailOverlay {
 			ctx.textBaseline = 'middle';
 			ctx.fillText(e.label ?? '', x, y + 0.5);
 			ctx.restore();
+			if (e.first) this.star(x + 10, y - 10, 6);
 			this.shown.push({ kind: 'event', x, y, r: 13, ref: e });
+			return;
+		}
+		if (e.kind === 'milestone') {
+			// a first or a round number: a pale five-pointed star
+			this.glow(x, y, 18, '#ffe9a8', 0.45);
+			this.star(x, y, 10);
+			this.shown.push({ kind: 'event', x, y, r: 11, ref: e });
 			return;
 		}
 		// a small round badge in the event's colour, with its sign
@@ -438,6 +474,7 @@ export class TrailOverlay {
 		ctx.textBaseline = 'middle';
 		ctx.fillText(sign[e.kind] ?? '•', x, y + 0.5);
 		ctx.restore();
+		if (e.first) this.star(x + 7, y - 7, 6);
 		this.shown.push({ kind: 'event', x, y, r: 10, ref: e });
 	}
 

@@ -15,7 +15,7 @@
 		death: '#f57373', mark: '#e6ba66', accept: '#ffd673', turnin: '#ffd673', explore: '#f5ad85', enter: '#a385ff', encounter: '#a385ff',
 		taxi: '#94c9ff', bind: '#94c9ff', learn: '#78dbed', rare: '#ff8052', abandon: '#9ba2b9',
 	};
-	const OVERVIEW_EVENTS = new Set(['level', 'death', 'mark']);
+	const OVERVIEW_EVENTS = new Set(['level', 'death', 'mark', 'milestone']);
 	const levelOf = (text: string) => /level (\d+)/i.exec(text)?.[1];
 
 	let { visible }: { visible: boolean } = $props();
@@ -74,19 +74,48 @@
 		const pins: OverlayPin[] = [];
 		const addLines = (id: string, trails: Parameters<typeof split>[0]) => {
 			const color = dash.colorOf(id);
+			const from = lines.length;
 			for (const r of split(trails, t)) lines.push({ c: r.c, pts: r.pts, color, faint: r.state === 'future', style: r.mode });
+			join(from);
 		};
-		const addEvent = (e: DashEvent, id: string, all: boolean) => {
-			if (e.t > t || e.pos?.c === undefined || (!all && !OVERVIEW_EVENTS.has(e.kind))) return;
-			if (e.kind !== 'level' && !EVENT_COLOR[e.kind]) return;
-			events.push({ c: e.pos.c, wx: e.pos.wx!, wy: e.pos.wy!, kind: e.kind, label: e.kind === 'level' ? levelOf(e.text) : undefined, color: EVENT_COLOR[e.kind] ?? dash.colorOf(id), data: e });
+		const addEvents = (list: DashEvent[], id: string, all: boolean) => {
+			const mine: OverlayEvent[] = [];
+			for (const e of list) {
+				if (e.kind === 'milestone' || e.t > t || e.pos?.c === undefined || (!all && !OVERVIEW_EVENTS.has(e.kind))) continue;
+				if (e.kind !== 'level' && !EVENT_COLOR[e.kind]) continue;
+				mine.push({ c: e.pos.c, wx: e.pos.wx!, wy: e.pos.wy!, kind: e.kind, label: e.kind === 'level' ? levelOf(e.text) : undefined, color: EVENT_COLOR[e.kind] ?? dash.colorOf(id), data: e });
+			}
+			// Firsts and round numbers: a star of their own, or one on the badge of the event that was
+			// the first (a first death, a first flight). Round levels are the level's starburst already.
+			for (const m of list) {
+				if (m.kind !== 'milestone' || m.milestone === 'level' || m.t > t || m.pos?.c === undefined) continue;
+				const on = mine.find((o) => Math.abs((o.data as DashEvent).t - m.t) < 1);
+				if (on) {
+					const d = on.data as DashEvent;
+					on.first = m.text;
+					on.data = { ...d, first: d.first ? `${d.first} · ${m.text}` : m.text };
+				} else mine.push({ c: m.pos.c, wx: m.pos.wx!, wy: m.pos.wy!, kind: 'milestone', color: '#fff1c2', data: m });
+			}
+			events.push(...mine);
+		};
+		// A trail that goes on from one line into the next (walking into riding, past into future)
+		// carries the points either side of the join, so the smoothing keeps its direction there.
+		const join = (from: number) => {
+			for (let i = from + 1; i < lines.length; i++) {
+				const a = lines[i - 1], b = lines[i];
+				const kin = a.style === b.style || (a.style !== 'ghost' && a.style !== 'flight' && b.style !== 'ghost' && b.style !== 'flight');
+				const n = a.pts.length;
+				if (a.c !== b.c || !kin || n < 4 || b.pts.length < 4 || a.pts[n - 2] !== b.pts[0] || a.pts[n - 1] !== b.pts[1]) continue;
+				a.post = [b.pts[2], b.pts[3]];
+				b.pre = [a.pts[n - 4], a.pts[n - 3]];
+			}
 		};
 		const level = (id: string) => dash.chars.find((c) => c.id === id)?.level ?? null;
 		if (dash.mode === 'overview' && dash.overview) {
 			for (const c of dash.overview.characters) {
 				if (dash.hidden.includes(c.char)) continue;
 				addLines(c.char, c.trails);
-				for (const e of c.events) addEvent(e, c.char, false);
+				addEvents(c.events, c.char, false);
 				const p = posAt(c.trails, t);
 				if (p) pins.push({ id: c.char, c: p.c, wx: p.wx, wy: p.wy, name: dash.name(c.char), level: level(c.char), color: dash.colorOf(c.char), online: inSessions(c.sessions, t) || live });
 			}
@@ -98,7 +127,7 @@
 				if (p) pins.push({ id: c.char, c: p.c, wx: p.wx, wy: p.wy, name: dash.name(c.char), level: level(c.char), color: dash.colorOf(c.char), online: false });
 			}
 			addLines(f.id, f.trails);
-			for (const e of f.events) addEvent(e, f.id, true);
+			addEvents(f.events, f.id, true);
 			const a = posAt(f.trails, t);
 			if (a) pins.push({ id: f.id, c: a.c, wx: a.wx, wy: a.wy, name: dash.name(f.id), level: level(f.id), color: dash.colorOf(f.id), online: inSessions(f.sessions, t) || live, heading: a.heading });
 		}
@@ -217,9 +246,10 @@
 		<span><b class="sw flight"></b>flight</span>
 		<span><b class="sw ghost"></b>ghost run</span>
 		<span><b class="star">★</b>level</span>
+		<span><b class="first">★</b>first</span>
 	</div>
 	{#if info}
-		<div class="info"><time>{day(info.t)} {hhmm(info.t)} · {dash.name(info.char)}</time>{info.text}</div>
+		<div class="info"><time>{day(info.t)} {hhmm(info.t)} · {dash.name(info.char)}</time>{#if info.first}<b class="firstline">★ {info.first}</b>{/if}{info.text}</div>
 	{/if}
 	<div class="player">
 		<select aria-label="How much playtime to show" value={bufferValue} onchange={(e) => setBuffer(e.currentTarget.value)}>
@@ -254,6 +284,8 @@
 	.sw.flight { height: 2px; background: repeating-linear-gradient(90deg, var(--textDim) 0 5px, transparent 5px 9px); }
 	.sw.ghost { background: repeating-linear-gradient(90deg, var(--textDim) 0 2px, transparent 2px 6px); }
 	.star { color: #f6c544; font-size: 12px; }
+	.first { color: #fff1c2; font-size: 12px; -webkit-text-stroke: 0.6px #3a2a08; }
+	.info .firstline { display: block; font-weight: 600; color: var(--accent); }
 	.info { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }
 	.info time { display: block; color: var(--textMuted); font-size: 11px; }
 	.player { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }
