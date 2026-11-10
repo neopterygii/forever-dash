@@ -2,4 +2,4 @@
 # fitzforge/polestar publishes a new addon release (renovate.json); a change here builds and
 # publishes v<version>.<n> (.github/workflows/dash-release.yml).
 # renovate: datasource=github-releases depName=fitzforge/polestar
-version: 0.3.5
+version: 0.3.6
