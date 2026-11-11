@@ -14,7 +14,7 @@
 
 	let { snapshot }: { snapshot: Snapshot } = $props();
 
-	const RELEASES = 'https://github.com/fitzforge/polestar/releases';
+	const RELEASES = 'https://github.com/neopterygii/forever-dash/releases'; // forever-dash: addons.rs REPO
 	const GLYPHS: Record<string, string> = { recorder: 'record', libforeverdata: 'layers' };
 	const DONE: Record<AddonAction, string> = { install: 'Installed', update: 'Updated', repair: 'Repaired', uninstall: 'Removed' };
 	const PHASE: Record<string, string> = { download: 'Downloading', verify: 'Checking', install: 'Installing', remove: 'Removing' };

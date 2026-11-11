@@ -3,7 +3,7 @@
 
 export const SOURCE_URL = 'https://github.com/fitzforge/polestar';
 export const CONTRACT_URL = 'https://github.com/fitzforge/polestar/blob/next/docs/RECORDING.md';
-export const CLIENT_URL = 'https://github.com/fitzforge/polestar/tree/next/apps/client';
+export const CLIENT_URL = 'https://github.com/neopterygii/forever-dash/tree/dash/apps/client'; // forever-dash: this build's source
 
 export const NEVER = [
 	'Character names, realm names and account names',

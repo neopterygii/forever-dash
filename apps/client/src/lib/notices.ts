@@ -14,7 +14,7 @@ export function shareNotice(s: Snapshot | null): boolean {
 	return !!s && s.setupDone && s.consent && s.shareNotice;
 }
 
-/** A Client release's page on GitHub, with its notes. */
+/** A Client release's page on GitHub, with its notes (forever-dash: this fork's releases, as update.rs's). */
 export function releaseUrl(version: string): string {
-	return `https://github.com/fitzforge/polestar/releases/tag/client-v${encodeURIComponent(version)}`;
+	return `https://github.com/neopterygii/forever-dash/releases/tag/client-v${encodeURIComponent(version)}`;
 }
