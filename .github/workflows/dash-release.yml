@@ -97,4 +97,4 @@ jobs:
           Polestar_DashSnapshot addon, build $N. Installed and updated by Forever Dash Client.
           Upstream: https://github.com/fitzforge/polestar/releases/tag/v$BASE
           EOF
-          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Polestar $BASE + forever-dash $N" --notes-file notes.md --latest=false
+          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Polestar $BASE + forever-dash $N" --notes-file notes.md --latest
