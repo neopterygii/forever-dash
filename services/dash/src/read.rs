@@ -133,8 +133,15 @@ pub struct Segment {
 	pub tracked: bool,
 }
 
-/// Douglas-Peucker on (wx, wy): indices of the points kept.
-fn simplify(p: &[(f64, f64)], tol: f64) -> Vec<usize> {
+/// How much further (times the tolerance) a dropped point may be from where the replay would put
+/// it at its time than from the line itself.
+const TIME_SLACK: f64 = 10.0;
+
+/// Douglas-Peucker on (wx, wy) and time: indices of the points kept. A dropped point lies within
+/// `tol` of the line, and within `TIME_SLACK * tol` of where a pin moving evenly between the kept
+/// points would be at its time: a long stop on a straight stretch keeps its two ends, so the
+/// replay stands still there instead of gliding through.
+fn simplify(p: &[(f64, f64)], ts: &[f64], tol: f64) -> Vec<usize> {
 	if p.len() < 3 || tol <= 0.0 {
 		return (0..p.len()).collect();
 	}
@@ -147,12 +154,16 @@ fn simplify(p: &[(f64, f64)], tol: f64) -> Vec<usize> {
 		let (bx, by) = p[b];
 		let (dx, dy) = (bx - ax, by - ay);
 		let len = (dx * dx + dy * dy).sqrt();
+		let dt = ts[b] - ts[a];
 		let mut best = (0.0, 0);
 		for i in a + 1..b {
 			let (px, py) = p[i];
 			let d = if len < 1e-9 { ((px - ax).powi(2) + (py - ay).powi(2)).sqrt() } else { ((px - ax) * dy - (py - ay) * dx).abs() / len };
-			if d > best.0 {
-				best = (d, i);
+			let u = if dt > 0.0 { ((ts[i] - ts[a]) / dt).clamp(0.0, 1.0) } else { 0.0 };
+			let late = ((px - (ax + dx * u)).powi(2) + (py - (ay + dy * u)).powi(2)).sqrt();
+			let score = d.max(late / TIME_SLACK);
+			if score > best.0 {
+				best = (score, i);
 			}
 		}
 		if best.0 > tol {
@@ -210,7 +221,7 @@ pub fn trail(db: &Connection, char_id: &str, from: f64, to: f64, tol: f64) -> ru
 	let mut segs: Vec<Segment> = runs
 		.into_iter()
 		.map(|r| {
-			let keep = simplify(&r.pts, tol);
+			let keep = simplify(&r.pts, &r.ts, tol);
 			Segment {
 				c: r.c,
 				ghost: r.ghost,
@@ -408,7 +419,7 @@ pub fn overview(db: &Connection, hours: f64, tol: f64, ids: &[String]) -> rusqli
 		let from = playtime_from(&sess, hours);
 		let to = sess.last().unwrap().1;
 		let (segs, total) = trail(db, &id, from, to, tol)?;
-		let ev = events(db, Some(&id), from, to, &["level", "death", "mark", "encounter", "enter", "milestone"])?;
+		let ev = events(db, Some(&id), from, to, &["level", "death", "mark", "milestone"])?;
 		let sess_in: Vec<Value> = sess.iter().filter(|s| s.1 >= from).map(|s| json!([s.0.max(from), s.1])).collect();
 		out.push(json!({ "char": id, "from": from, "to": to, "sessions": sess_in, "segments": segs, "points": total, "events": ev }));
 	}
@@ -452,7 +463,10 @@ pub const JOURNAL_PAGE: usize = 10;
 /// up to `limit` sessions after the cursor `before` (the last one shown: its start and character;
 /// None = the newest), newest first (same start: by character), and whether older ones remain.
 /// `all`: the characters "every character" means (the viewer's group).
-pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str)>, limit: usize, all: &[String]) -> rusqlite::Result<Value> {
+/// `find`: only sessions whose places, log lines, notes or diary entry hold these words (any case),
+/// looked for through the whole history.
+pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str)>, limit: usize, all: &[String], find: Option<&str>) -> rusqlite::Result<Value> {
+	let find: Vec<String> = find.unwrap_or("").to_lowercase().split_whitespace().map(str::to_string).collect();
 	let frames = frames(db)?;
 	let ids: Vec<String> = match char_id {
 		Some(c) => vec![c.to_string()],
@@ -468,13 +482,17 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 		);
 	}
 	older.sort_by(|x, y| y.0.total_cmp(&x.0).then_with(|| x.2.cmp(&y.2)));
-	let more = older.len() > limit;
+	let mut more = false;
 	let mut sexes: HashMap<String, Option<i64>> = HashMap::new();
 	let mut milestones: HashMap<String, Vec<crate::milestones::Milestone>> = HashMap::new();
 	type Groups = (Vec<crate::group::Span>, Vec<(String, String, Vec<crate::group::Span>)>);
 	let mut groups: HashMap<String, Groups> = HashMap::new();
 	let mut out = Vec::new();
-	for (start, end, id) in older.into_iter().take(limit) {
+	for (start, end, id) in older {
+		if out.len() == limit {
+			more = true;
+			break;
+		}
 		let char_id = id.as_str();
 		let sex = *sexes.entry(id.clone()).or_insert_with(|| char_sex(db, char_id));
 		if !groups.contains_key(char_id) {
@@ -582,10 +600,27 @@ pub fn journal(db: &Connection, char_id: Option<&str>, before: Option<(f64, &str
 			json!({ "seconds": gs.seconds.round(), "party": gs.party, "raid": gs.raid, "with": gs.with.iter().map(|w| json!({ "char": w.0, "name": w.1 })).collect::<Vec<_>>() })
 		});
 		let chapter = crate::chapters::of(&chapters[char_id], start);
-		out.push(json!({ "group": group, "gathered": gathered, "chapter": chapter,
+		let session = json!({ "group": group, "gathered": gathered, "chapter": chapter,
 			"char": char_id, "start": start, "end": end, "diary": diary, "seconds": end - start, "zones": zones, "kills": kills, "killXp": kill_xp,
 			"quests": quests, "deaths": deaths, "levels": levels, "yards": dist.round(), "events": events, "notes": notes,
-		}));
+		});
+		if !find.is_empty() {
+			let mut hay = String::new();
+			let mut add = |v: &Value| {
+				if let Some(t) = v.as_str() {
+					hay.push_str(&t.to_lowercase());
+					hay.push('\n');
+				}
+			};
+			session["zones"].as_array().into_iter().flatten().for_each(&mut add);
+			session["events"].as_array().into_iter().flatten().for_each(|e| add(&e["text"]));
+			session["notes"].as_array().into_iter().flatten().for_each(|n| add(&n["text"]));
+			add(&session["diary"]["text"]);
+			if !find.iter().all(|w| hay.contains(w.as_str())) {
+				continue;
+			}
+		}
+		out.push(session);
 	}
 	Ok(json!({ "sessions": out, "more": more }))
 }
@@ -927,6 +962,26 @@ mod quest_text_tests {
 		pos(604.0, 2600);
 		let (segs, _) = trail(&db, "a", 0.0, 1e9, 0.0).unwrap();
 		assert_eq!(segs.iter().map(|s| s.ts.len()).collect::<Vec<_>>(), vec![4, 1]);
+	}
+
+	#[test]
+	fn a_long_stop_on_a_straight_stretch_keeps_its_ends() {
+		// Walking a straight line at 7 yd/s, five minutes standing in the middle, walking on.
+		let mut p = Vec::new();
+		let mut ts = Vec::new();
+		for i in 0..10 {
+			p.push((i as f64 * 14.0, 0.0));
+			ts.push(i as f64 * 2.0);
+		}
+		for i in 0..10 {
+			p.push((126.0 + (i + 1) as f64 * 14.0, 0.0));
+			ts.push(318.0 + (i + 1) as f64 * 2.0);
+		}
+		// By shape alone the whole line is two points; with time, the stop's two ends stay.
+		assert_eq!(simplify(&p, &ts, 1.5), vec![0, 9, 10, 19]);
+		// Even walking keeps nothing more than the ends.
+		let (p2, t2): (Vec<_>, Vec<_>) = (0..20).map(|i| ((i as f64 * 14.0, 0.0), i as f64 * 2.0)).unzip();
+		assert_eq!(simplify(&p2, &t2, 1.5), vec![0, 19]);
 	}
 
 	#[test]

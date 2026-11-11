@@ -1,6 +1,17 @@
 <script lang="ts">
 	import { dash } from '../lib/dash.svelte';
+	import { ago } from '../lib/format';
 	import CharacterCard from './CharacterCard.svelte';
+
+	/** A PC has gone quiet when it sent nothing for this long while another has uploaded since (seconds). */
+	const QUIET = 3 * 24 * 3600;
+	const pcs = $derived(
+		dash.uploads.map((u, i) => ({
+			...u,
+			names: u.chars.map((id) => dash.chars.find((c) => c.id === id)?.name ?? '?').join(', '),
+			quiet: i > 0 && dash.uploads[0].received - u.received > QUIET,
+		})),
+	);
 
 	// Picking the selected character again goes back to everyone.
 	function pick(id: string | null) {
@@ -20,9 +31,17 @@
 			<CharacterCard {c} selected={dash.mode === 'focus' && dash.focus?.id === c.id} color={dash.colorOf(c.id)} onpick={() => pick(c.id)} onopen={(view) => (dash.sheet = { id: c.id, view })} />
 		{/each}
 	</ul>
-	{#if dash.stats || dash.access?.group}
+	{#if pcs.length || dash.access?.group}
 		<footer class="stats">
-			{#if dash.stats}<span class="counts">{dash.stats.chunks} chunks · {dash.stats.positions} positions · {dash.stats.events} events (all kept)</span>{/if}
+			{#if pcs.length}
+				<ul class="pcs" aria-label="Uploads, by PC">
+					{#each pcs as p, i (i)}
+						<li class:quiet={p.quiet} title="{p.quiet ? 'This PC has sent nothing for a while: is its client running? ' : ''}Latest play it sent: {ago(p.last)}">
+							<b></b><span class="pn">{p.names}</span><span class="pa">uploaded {ago(p.received)}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 			{#if dash.access?.group}<span class="grp">{dash.access.group} · <button onclick={() => dash.run(dash.signOut())}>Sign out</button></span>{/if}
 		</footer>
 	{/if}
@@ -40,6 +59,13 @@
 	.n { font-weight: 700; font-size: 14px; }
 	.all .n { font-size: 13px; }
 	.stats { display: grid; gap: 6px; padding: 12px 16px; color: var(--textMuted); font-size: 11px; border-top: 1px solid var(--border); }
+	.pcs { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+	.pcs li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+	.pcs b { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #6bd999; }
+	.pcs .pn { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--textDim); }
+	.pcs .pa { flex: none; }
+	.pcs li.quiet b { background: var(--danger); }
+	.pcs li.quiet .pa { color: var(--danger); }
 	.grp button { all: unset; color: var(--accent); cursor: pointer; font-weight: 600; }
 	.grp button:hover { text-decoration: underline; }
 	.grp button:focus-visible { outline: 1px solid var(--focus); }
@@ -47,7 +73,7 @@
 		.side { max-height: 32vh; border-right: 0; border-bottom: 1px solid var(--border); }
 		/* Phones: only who is signed in, to sign out. */
 		.stats { padding: 6px 16px; }
-		.stats .counts { display: none; }
+		.stats .pcs { display: none; }
 		.grp button { padding: 8px 6px; margin: -8px -6px; }
 		.stats:not(:has(.grp)) { display: none; }
 	}

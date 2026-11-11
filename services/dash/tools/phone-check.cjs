@@ -141,8 +141,9 @@ const VIEWS = [
 			try {
 				await act(page);
 			} catch (e) {
-				report.push(`${phone.name} ${view}: could not reach the view (${e.message.split('\n')[0]})`);
+				report.push(`FAIL ${phone.name} ${view}: could not reach the view (${e.message.split('\n')[0]})`);
 				failed = true;
+				continue; // nothing of this view to measure or show
 			}
 			await page.waitForTimeout(900);
 			const m = await measure(page);

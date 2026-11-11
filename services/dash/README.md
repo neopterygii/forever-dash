@@ -25,7 +25,8 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
 - **Groups (`serve --groups FILE`):** who sees what. Each line of the file is a group, `<code> <name>`
   (`forever-dash group-code` makes a code), or `+ <device token> <code>` for an older device token that
   uploads into that group. A client uploads with the group code as its token; its characters belong to
-  that group (the latest upload decides). The site asks for a group code (`POST /api/signin`, kept in an
+  that group. A character stays with the PC (install) that first uploaded it: that PC moves it by
+  uploading with another code, another PC naming it does not take it. The site asks for a group code (`POST /api/signin`, kept in an
   HttpOnly cookie for a year) and every read is limited to the group's characters; player notes are
   per group. No code, no site: there is no registration. Without `--groups` the site is open and uploads
   follow `--tokens`.
@@ -40,12 +41,24 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   a page at a time: `{ sessions, more }`; without `char`, every character's sessions together;
   `before`/`beforeChar` = the last session shown); `/api/quest?char=&id=` (the quest
   card: Polestar's facts from `names`, the text the character read, giver, rewards, time taken);
-  `POST /api/notes`; `GET /api/stats`.
+  `POST /api/notes`, `POST /api/notes/edit` (`{ id, text }`, empty text deletes); `GET /api/stats`;
+  `GET /api/uploads` (upload health: per PC, when it last uploaded and whose play). The journal also
+  takes `q` (words to find in places, log lines, notes and diary entries, through the whole history).
   Everything is kept; only the map is limited to a playtime buffer.
 - Map: overview of all characters (default 6 h of play each), or one character in focus (default
   its last session, up to all play), scrubbed over playtime (offline gaps skipped).
   Trails are drawn with their corners rounded (`smooth`, `ui/src/lib/overlay.ts`) through every kept
   point and never more than 3 yards off the straight line between two of them; sharp turns stay corners.
+- Replay honesty: trail points are dropped by shape *and* time (`simplify`, `TIME_SLACK`), so a
+  long stop on a straight stretch keeps its ends and the pin stands still there. The overlay
+  (`ui/src/lib/overlay.ts`) keeps each trail's screen line per view with the time of every point:
+  playing only moves where the bright part ends, and the same lines answer hover and clicks.
+- Map controls: hover a badge, a pin or the trail for what and when; click the trail to go to that
+  moment; badges that would cover each other pile up with a count. Space plays and pauses, the
+  arrows step a minute of play (ten with Shift), `[` and `]` go to the previous and next event;
+  Follow keeps the selected character in view while playing. The address holds the character,
+  buffer, moment and open journal (`#c=&b=&t=&j=1`), so a link opens the same thing. The page asks
+  for newer play every minute and when it comes back to the front.
 - Web (`ui/`): Svelte 5 + TypeScript + Vite, the same stack and versions as Polestar Client
   (`apps/client`). It bundles MapView from this fork's `tools/planner/public/map/` and takes
   Polestar's design tokens and fonts from the planner's stylesheet at build time

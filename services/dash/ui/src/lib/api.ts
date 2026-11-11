@@ -286,6 +286,13 @@ export interface Stats {
 	maps: number;
 }
 
+/** A PC (a Recorder install) that uploads the viewer's characters: when it last did, the latest play it sent, whose. */
+export interface UploadPc {
+	received: number;
+	last: number;
+	chars: string[];
+}
+
 /** Called when the server says the viewer is not signed in (a group code was removed, the cookie expired). */
 export const auth = { onSignedOut: () => {} };
 
@@ -326,8 +333,17 @@ export const api = {
 	/** Every character's events in [from, to] (all journal kinds when `kinds` is empty). */
 	allEvents: (from: number, to: number, kinds: string[] = []) => get<DashEvent[]>(`/api/events?${q({ from, to, kinds: kinds.join(',') })}`),
 	/** A page of one character's journal (everyone's when `char` is undefined), newest first: the sessions after `after` (the last one shown; default: the newest). */
-	journal: (char: string | undefined, after?: Session, limit = 10) =>
-		get<JournalPage>(`/api/journal?${q({ limit, ...(char ? { char } : {}), ...(after ? { before: after.start, beforeChar: after.char } : {}) })}`),
+	/** `find`: only sessions holding these words. `until`: only sessions that began before this time (a date to jump to). */
+	journal: (char: string | undefined, after?: Session, limit = 10, find = '', until?: number) =>
+		get<JournalPage>(
+			`/api/journal?${q({ limit, ...(char ? { char } : {}), ...(after ? { before: after.start, beforeChar: after.char } : until ? { before: until } : {}), ...(find.trim() ? { q: find.trim() } : {}) })}`,
+		),
+	uploads: () => get<UploadPc[]>('/api/uploads'),
+	/** Changes a note's text; empty text deletes it. */
+	editNote: async (id: number, text: string) => {
+		const r = await fetch('/api/notes/edit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, text }) });
+		if (!r.ok) throw new Error(`notes: ${r.status}`);
+	},
 	quest: (char: string, id: number) => get<QuestInfo>(`/api/quest?${q({ char, id })}`),
 	snapshot: (char: string) => get<Snapshot | null>(`/api/snapshot?${q({ char })}`),
 	/** Your own diary entry for a session; empty text goes back to the written one. */

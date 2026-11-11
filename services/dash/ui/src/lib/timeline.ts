@@ -109,6 +109,7 @@ export function posAt(segs: Trail[], t: number): At | null {
 /** How a stretch of trail is drawn: on foot, mounted, dead (a ghost run) or a flight. */
 export type LineStyle = 'walk' | 'mount' | 'ghost' | 'flight';
 
+/** MapView's own route format (lib/mapview.ts `setRoute`; the dashboard draws its trails itself). */
 export interface Route {
 	c: number;
 	pts: Float32Array;
@@ -116,18 +117,4 @@ export interface Route {
 	state: 'past' | 'future';
 }
 
-/** Trails split at t into past and future routes (MapView.setRoute). */
-export function split(segs: Trail[], t: number, out: Route[] = []): Route[] {
-	for (const s of segs) {
-		const mode: LineStyle = s.flight ? 'flight' : s.ghost ? 'ghost' : s.mounted ? 'mount' : 'walk';
-		const ts = s.ts;
-		if (t >= ts[ts.length - 1]) out.push({ c: s.c, pts: s.f32, mode, state: 'past' });
-		else if (t <= ts[0]) out.push({ c: s.c, pts: s.f32, mode, state: 'future' });
-		else {
-			const p = posIn(s, t);
-			out.push({ c: s.c, pts: Float32Array.from([...s.pts.slice(0, 2 * p.k + 2), p.wx, p.wy]), mode, state: 'past' });
-			out.push({ c: s.c, pts: Float32Array.from([p.wx, p.wy, ...s.pts.slice(2 * p.k + 2)]), mode, state: 'future' });
-		}
-	}
-	return out;
-}
+export const styleOf = (s: Trail): LineStyle => (s.flight ? 'flight' : s.ghost ? 'ghost' : s.mounted ? 'mount' : 'walk');

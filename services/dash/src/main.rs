@@ -123,17 +123,25 @@ struct SignIn {
 }
 
 /// Signs in with a group code: a cookie for a year. A wrong code waits a second (guessing is slow).
-async fn sign_in(Json(b): Json<SignIn>) -> Response {
+/// `; Secure` for the sign-in cookie, except when the page itself was opened over plain http (a
+/// LAN or Tailscale address): a browser would drop a Secure cookie there and the sign-in would
+/// silently not stick. The browser's Origin header says which it is.
+fn cookie_secure(headers: &HeaderMap) -> &'static str {
+	let origin = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or("");
+	if origin.starts_with("http://") { "" } else { "; Secure" }
+}
+
+async fn sign_in(headers: HeaderMap, Json(b): Json<SignIn>) -> Response {
 	let Some((code, name)) = groups::by_code(&b.code) else {
 		tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 		return (StatusCode::UNAUTHORIZED, "unknown group code").into_response();
 	};
-	let cookie = format!("{}={code}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax", groups::COOKIE);
+	let cookie = format!("{}={code}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax{}", groups::COOKIE, cookie_secure(&headers));
 	([(axum::http::header::SET_COOKIE, cookie)], Json(json!({ "group": name }))).into_response()
 }
 
-async fn sign_out() -> Response {
-	let cookie = format!("{}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax", groups::COOKIE);
+async fn sign_out(headers: HeaderMap) -> Response {
+	let cookie = format!("{}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax{}", groups::COOKIE, cookie_secure(&headers));
 	([(axum::http::header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response()
 }
 
@@ -192,6 +200,8 @@ struct JournalQ {
 	#[serde(rename = "beforeChar")]
 	before_char: Option<String>,
 	limit: Option<usize>,
+	/// Words to look for (places, log lines, notes, diary) through the whole history.
+	q: Option<String>,
 }
 
 async fn journal(State(db): State<Db>, headers: HeaderMap, Query(q): Query<JournalQ>) -> Response {
@@ -202,7 +212,7 @@ async fn journal(State(db): State<Db>, headers: HeaderMap, Query(q): Query<Journ
 	if char.is_some_and(|c| !sc.has(c)) {
 		return not_ours();
 	}
-	read::journal(&db, char, q.before.map(|b| (b, q.before_char.as_deref().unwrap_or(""))), limit, &sc.list()).map(Json).map_or_else(err500, IntoResponse::into_response)
+	read::journal(&db, char, q.before.map(|b| (b, q.before_char.as_deref().unwrap_or(""))), limit, &sc.list(), q.q.as_deref()).map(Json).map_or_else(err500, IntoResponse::into_response)
 }
 
 #[derive(Deserialize)]
@@ -296,6 +306,64 @@ async fn add_note(State(db): State<Db>, headers: HeaderMap, Json(n): Json<NoteBo
 		Ok(_) => Json(json!({ "id": db.last_insert_rowid() })).into_response(),
 		Err(e) => err500(e),
 	}
+}
+
+#[derive(Deserialize)]
+struct NoteEdit {
+	id: i64,
+	/// The note's new text; empty deletes it.
+	text: String,
+}
+
+/// Changes a note's text, or deletes it (empty text). Only a note of the viewer's own characters.
+async fn edit_note(State(db): State<Db>, headers: HeaderMap, Json(n): Json<NoteEdit>) -> Response {
+	if n.text.len() > 4000 {
+		return (StatusCode::BAD_REQUEST, "too long").into_response();
+	}
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	let owner: Option<String> = db.query_row("SELECT char_id FROM notes WHERE id = ?1", [n.id], |r| r.get(0)).ok();
+	if !owner.is_some_and(|c| sc.has(&c)) {
+		return (StatusCode::NOT_FOUND, "no such note").into_response();
+	}
+	let text = n.text.trim();
+	let done = if text.is_empty() { db.execute("DELETE FROM notes WHERE id = ?1", [n.id]) } else { db.execute("UPDATE notes SET text = ?2 WHERE id = ?1", rusqlite::params![n.id, text]) };
+	match done {
+		Ok(_) => Json(json!({ "ok": true })).into_response(),
+		Err(e) => err500(e),
+	}
+}
+
+/// Upload health: each PC (a Recorder install) that sent the viewer's characters, newest first:
+/// when it last uploaded, how much, and whose play. The install id itself stays on the server.
+async fn uploads(State(db): State<Db>, headers: HeaderMap) -> Response {
+	let db = db.lock().unwrap();
+	let sc = scope!(db, headers);
+	let rows = (|| -> rusqlite::Result<Vec<(String, i64, f64, String)>> {
+		let mut st = db.prepare("SELECT install, MAX(received), MAX(last_t), char_id FROM chunks GROUP BY install, char_id ORDER BY 2 DESC")?;
+		let r = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect();
+		r
+	})();
+	let rows = match rows {
+		Ok(r) => r,
+		Err(e) => return err500(e),
+	};
+	let mut pcs: Vec<(String, i64, f64, Vec<String>)> = Vec::new();
+	for (install, received, last, ch) in rows {
+		if !sc.has(&ch) {
+			continue;
+		}
+		match pcs.iter_mut().find(|p| p.0 == install) {
+			Some(p) => {
+				p.1 = p.1.max(received);
+				p.2 = p.2.max(last);
+				p.3.push(ch);
+			}
+			None => pcs.push((install, received, last, vec![ch])),
+		}
+	}
+	pcs.sort_by(|a, b| b.1.cmp(&a.1));
+	Json(Value::Array(pcs.into_iter().map(|p| json!({ "received": p.1, "last": p.2, "chars": p.3 })).collect())).into_response()
 }
 
 #[derive(Deserialize)]
@@ -436,6 +504,8 @@ async fn serve(args: &[String]) {
 		.route("/api/item-ids", get(item_ids))
 		.route("/api/events", get(events))
 		.route("/api/notes", post(add_note))
+		.route("/api/notes/edit", post(edit_note))
+		.route("/api/uploads", get(uploads))
 		.route("/api/diary", post(set_diary))
 		.route("/api/people", get(people_list))
 		.route("/api/person", get(person).post(set_person))
@@ -512,7 +582,11 @@ fn upload_cmd(args: &[String]) -> Result<(), String> {
 	let server = arg(args, "--server", "http://127.0.0.1:8790");
 	let token = arg(args, "--token", "");
 	let http = reqwest::blocking::Client::new();
-	for f in scan(&wtf) {
+	let found = scan(&wtf);
+	if found.is_empty() {
+		return Err(format!("no Recorder data under {} (it should hold Account/<name>/SavedVariables/{})", wtf.display(), sv::FILE_NAME));
+	}
+	for f in found {
 		let chunks: Vec<api::UploadChunk> = f.vars.chunks.iter().map(|(&seq, text)| api::UploadChunk { seq, text: text.clone() }).collect();
 		let mut total = api::UploadResponse::default();
 		// Batches under the server's limits (as Polestar Client's pending() does).

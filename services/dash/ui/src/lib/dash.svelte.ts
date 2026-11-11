@@ -4,7 +4,7 @@
 //   pin per character). The buffer bounds what the page loads; the database keeps everything.
 // - focus: one character in full detail (fine trail, arrow, journal events as pins), the others
 //   faint. Its buffer defaults to the last session and can grow to all play.
-import { api, auth, prep, type Access, type Character, type DashEvent, type OverviewChar, type Span, type Stats, type Trail } from './api';
+import { api, auth, prep, type Access, type Character, type DashEvent, type OverviewChar, type Span, type Trail, type UploadPc } from './api';
 import { Timeline, playtimeFrom } from './timeline';
 import { PALETTE } from './overlay';
 
@@ -25,8 +25,6 @@ export interface FocusData {
 	to: number;
 	trails: Trail[];
 	events: DashEvent[];
-	points: number;
-	kept: number;
 }
 
 /** Journal kinds the focused map shows as pins (glyph, colour token). */
@@ -62,9 +60,28 @@ function readList(key: string): string[] {
 	}
 }
 
+function readFlag(key: string, fallback: boolean): boolean {
+	try {
+		const v = localStorage.getItem(key);
+		return v === null ? fallback : v === '1';
+	} catch {
+		return fallback;
+	}
+}
+
+/** How often the page asks whether newer play was uploaded (seconds). */
+const REFRESH_EVERY = 60;
+
 class Dash {
 	chars = $state.raw<Character[]>([]);
-	stats = $state.raw<Stats | null>(null);
+	/** The PCs that upload these characters, the latest first. */
+	uploads = $state.raw<UploadPc[]>([]);
+	/** Bumped when newer data was loaded: whatever shows the journal reads it again. */
+	version = $state(0);
+	/** Newer play has been uploaded than the map shows (it was replaying, or showing one past session). */
+	fresh = $state(false);
+	/** The map keeps the selected character in view while its replay plays (kept in this browser). */
+	follow = $state(readFlag('dash.follow', true));
 	mode = $state<Mode>('overview');
 	overview = $state.raw<OverviewData | null>(null);
 	focus = $state.raw<FocusData | null>(null);
@@ -77,6 +94,15 @@ class Dash {
 	/** Per viewer, kept in this browser: characters starred (listed first) and hidden from the map. */
 	starred = $state<string[]>(readList('dash.starred'));
 	hidden = $state<string[]>(readList('dash.hidden'));
+
+	setFollow(on: boolean) {
+		this.follow = on;
+		try {
+			localStorage.setItem('dash.follow', on ? '1' : '0');
+		} catch {
+			/* kept for this page only */
+		}
+	}
 
 	toggle(list: 'starred' | 'hidden', id: string) {
 		const cur = this[list];
@@ -122,36 +148,113 @@ class Dash {
 		};
 		this.access = await api.me();
 		if (this.signedOut) return;
-		const [chars, stats] = await Promise.all([api.characters(), api.stats()]);
+		const [chars, uploads] = await Promise.all([api.characters(), api.uploads().catch(() => [])]);
 		this.chars = chars;
-		this.stats = stats;
+		this.uploads = uploads;
 		await this.applyLocation();
+		this.watch();
 	}
 
-	// The selected character lives in the address (#c=<id>): Back leaves a character for the
-	// overview (or the one before), and a reload or a shared link opens the same character.
+	/** At the newest moment of what is loaded (not replaying the past). */
+	get atLatest() {
+		return !!this.timeline && this.t >= this.timeline.end - 1;
+	}
+
+	// Newer play: the page asks every minute, and when it comes back to the front. Looking at the
+	// latest moment, the map simply moves on (the view stays where it is); replaying the past or one
+	// past session, it says so and waits to be asked.
+
+	private watching = false;
+	private watch() {
+		if (this.watching) return;
+		this.watching = true;
+		const check = () => {
+			if (document.visibilityState === 'visible' && !this.signedOut && this.access) this.checkFresh().catch(() => {});
+		};
+		setInterval(check, REFRESH_EVERY * 1000);
+		document.addEventListener('visibilitychange', check);
+	}
+
+	private stamp(chars: Character[]) {
+		return chars.map((c) => `${c.id}:${c.last ?? 0}:${c.level ?? 0}:${c.snapshotAt ?? 0}`).sort().join('|');
+	}
+
+	async checkFresh() {
+		const chars = await api.characters();
+		if (this.stamp(chars) === this.stamp(this.chars)) return;
+		const played = Math.max(0, ...chars.map((c) => c.last ?? 0)) > Math.max(0, ...this.chars.map((c) => c.last ?? 0));
+		this.chars = chars;
+		api.uploads().then((u) => (this.uploads = u)).catch(() => {});
+		this.version++;
+		if (!played) return;
+		const pinned = this.mode === 'focus' && this.focus?.buffer.startsWith('s:');
+		if (this.atLatest && !this.playing && !pinned) await this.showLatest();
+		else this.fresh = true;
+	}
+
+	/** Loads the newest play into the view shown, leaving the map where it is. */
+	async showLatest() {
+		this.fresh = false;
+		if (this.mode === 'focus' && this.focus) {
+			const b = this.focus.buffer;
+			await this.showFocus(this.focus.id, b.startsWith('s:') ? 'session' : b, false);
+		} else await this.showOverview(this.overview?.hours ?? 6, false);
+	}
+
+	// What is shown lives in the address: #c=<character>&b=<buffer>&t=<replay time>&j=1 (journal
+	// open), or #h=<hours>&t=... for everyone. Back leaves a character for the overview (or the one
+	// before); a reload or a shared link opens the same character, session and moment.
+
+	private params() {
+		return new URLSearchParams(location.hash.slice(1));
+	}
 
 	/** The character the address names, if it is one we know. */
-	private locationChar(): string | null {
-		const id = new URLSearchParams(location.hash.slice(1)).get('c');
+	private locationChar(p = this.params()): string | null {
+		const id = p.get('c');
 		return id && this.chars.some((c) => c.id === id) ? id : null;
 	}
 
 	/** Shows what the address names (at load and on Back/Forward). */
 	async applyLocation() {
-		const id = this.locationChar();
+		const p = this.params();
+		const id = this.locationChar(p);
 		if (id) {
-			if (this.mode !== 'focus' || this.focus?.id !== id) await this.showFocus(id);
-		} else if (this.mode !== 'overview' || !this.overview) {
-			await this.showOverview(this.overview?.hours ?? 6);
+			const buffer = p.get('b') || 'session';
+			const valid = buffer === 'session' || buffer === 'all' || /^\d+$/.test(buffer) || /^s:[\d.]+:[\d.]+$/.test(buffer);
+			if (this.mode !== 'focus' || this.focus?.id !== id || (p.has('b') && this.focus.buffer !== buffer)) await this.showFocus(id, valid ? buffer : 'session');
+		} else {
+			const hours = Number(p.get('h')) || this.overview?.hours || 6;
+			if (this.mode !== 'overview' || !this.overview || this.overview.hours !== hours) await this.showOverview(OVERVIEW_BUFFERS.some(([h]) => h === hours) ? hours : 6);
 		}
+		const t = Number(p.get('t'));
+		if (t && this.timeline) this.t = Math.max(this.timeline.start, Math.min(this.timeline.end, t));
+		if (p.has('j')) this.journalOpen = true;
 	}
 
-	/** A new history entry when the selection changed (not for a new buffer of the same one). */
-	private syncLocation() {
-		const want = this.mode === 'focus' && this.focus ? `#c=${encodeURIComponent(this.focus.id)}` : '';
+	/** The address for what is shown now. */
+	private hash(): string {
+		const p = new URLSearchParams();
+		if (this.mode === 'focus' && this.focus) {
+			p.set('c', this.focus.id);
+			if (this.focus.buffer !== 'session') p.set('b', this.focus.buffer);
+		} else if (this.overview && this.overview.hours !== 6) p.set('h', String(this.overview.hours));
+		if (this.timeline && !this.atLatest) p.set('t', String(Math.round(this.t)));
+		if (this.journalOpen) p.set('j', '1');
+		const s = p.toString().replace(/%3A/g, ':');
+		return s ? `#${s}` : '';
+	}
+
+	/** Keeps the address in step: a new history entry when the character changed, else the entry
+	 *  rewritten (a new buffer, another moment, the journal opened). */
+	syncLocation() {
+		const want = this.hash();
 		if (location.hash === want || (!want && !location.hash)) return;
-		history.pushState(null, '', want || location.pathname + location.search);
+		const url = want || location.pathname + location.search;
+		const was = this.params().get('c') ?? '';
+		const now = this.mode === 'focus' ? (this.focus?.id ?? '') : '';
+		if (was !== now) history.pushState(null, '', url);
+		else history.replaceState(null, '', url);
 	}
 
 	/** Back to every character (the sidebar's "All characters", the top bar's button, Esc). */
@@ -164,24 +267,26 @@ class Dash {
 		this.overview = { hours, characters: ov.characters.map((c) => ({ ...c, trails: prep(c.segments) })) };
 	}
 
-	private setTimeline(intervals: Span[]) {
+	private setTimeline(intervals: Span[], fit: boolean) {
 		this.timeline = new Timeline(intervals);
 		this.t = this.timeline.end;
-		this.fitRequest++;
+		if (fit) this.fitRequest++;
 	}
 
-	async showOverview(hours = 6) {
+	/** `fit` false: the map's view is left alone (newer data for what is already shown). */
+	async showOverview(hours = 6, fit = true) {
 		this.playing = false;
 		await this.loadOverview(hours);
 		this.mode = 'overview';
 		this.focus = null;
-		this.setTimeline(this.overview!.characters.flatMap((c) => c.sessions));
+		this.fresh = false;
+		this.setTimeline(this.overview!.characters.flatMap((c) => c.sessions), fit);
 		this.syncLocation();
 	}
 
-	async showFocus(id: string, buffer: FocusBuffer = 'session') {
+	async showFocus(id: string, buffer: FocusBuffer = 'session', fit = true) {
 		this.playing = false;
-		if (!this.overview) await this.loadOverview(6);
+		if (!this.overview || !fit) await this.loadOverview(this.overview?.hours ?? 6);
 		const sessions = await api.sessions(id);
 		const last = sessions[sessions.length - 1] ?? [0, 0];
 		let from: number, to: number;
@@ -192,10 +297,11 @@ class Dash {
 		else if (buffer.startsWith('s:')) [from, to] = buffer.slice(2).split(':').map(Number) as Span;
 		else [from, to] = [playtimeFrom(sessions, Number(buffer)), last[1]];
 		const [trail, events] = await Promise.all([api.trail(id, from, to), api.events(id, from, to, Object.keys(PIN))]);
-		this.focus = { id, buffer, sessions, from, to, trails: prep(trail.segments), events, points: trail.points, kept: trail.kept };
+		this.focus = { id, buffer, sessions, from, to, trails: prep(trail.segments), events };
 		this.mode = 'focus';
+		if (!buffer.startsWith('s:')) this.fresh = false;
+		this.setTimeline(sessions.filter(([a, b]) => b >= from && a <= to).map(([a, b]): Span => [Math.max(a, from), Math.min(b, to)]), fit);
 		this.syncLocation();
-		this.setTimeline(sessions.filter(([a, b]) => b >= from && a <= to).map(([a, b]): Span => [Math.max(a, from), Math.min(b, to)]));
 	}
 
 	async signIn(code: string): Promise<boolean> {
@@ -207,6 +313,8 @@ class Dash {
 	async signOut() {
 		await api.signOut();
 		this.chars = [];
+		this.uploads = [];
+		this.fresh = false;
 		this.overview = null;
 		this.focus = null;
 		this.mode = 'overview';

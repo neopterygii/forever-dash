@@ -4,18 +4,26 @@
 // badges; characters as pins with a name pill. Redrawn whenever the map's camera or the data
 // changes (checked every animation frame). Projection: MapView's own toScreen, as an affine map
 // per continent from three points (exact: MapView's view is linear in world yards).
+//
+// A trail's screen line (thinned for the zoom, corners rounded) is worked out once per view and
+// kept with the time of each of its points; the replay only moves the place where the bright part
+// ends, so playing costs a redraw and nothing else. The same kept lines answer what is under the
+// pointer (a pin, an event, a moment of a trail).
 import type { MapViewApi } from './mapview';
 import type { LineStyle } from './timeline';
 
 export interface OverlayLine {
+	/** Whose trail (a character id). */
+	id: string;
 	c: number;
 	/** Flat wx, wy pairs. */
 	pts: ArrayLike<number>;
+	/** The time of each point (epoch seconds, rising). */
+	ts: ArrayLike<number>;
 	color: string;
-	faint: boolean;
 	style: LineStyle;
 	/** The points either side of this line when the trail goes on through its ends (walking into
-	 *  riding, the replay's past into its future): the curve keeps its direction across the join. */
+	 *  riding): the curve keeps its direction across the join. */
 	pre?: [number, number];
 	post?: [number, number];
 }
@@ -33,10 +41,16 @@ const SHARP_TURN = (135 * Math.PI) / 180;
  * stroke and the direction chevrons follow the same line. maxDev < 0.5 px: the points as given.
  * `pre` and `post`: the points before the first and after the last when the trail goes on there
  * (used for the direction at the ends only; nothing is drawn towards them).
+ * `at`, when given, is filled with where each returned point lies along the given ones (2.25: a
+ * quarter of the way from point 2 to point 3), so a point's time can be read off its neighbours'.
  */
-export function smooth(p: [number, number][], maxDev: number, pre?: [number, number], post?: [number, number]): [number, number][] {
-	if (p.length < 3 || !(maxDev >= 0.5)) return p;
+export function smooth(p: [number, number][], maxDev: number, pre?: [number, number], post?: [number, number], at?: number[]): [number, number][] {
+	if (p.length < 3 || !(maxDev >= 0.5)) {
+		if (at) for (let i = 0; i < p.length; i++) at.push(i);
+		return p;
+	}
 	const out: [number, number][] = [p[0]];
+	at?.push(0);
 	const dist = (u: [number, number], v: [number, number]) => Math.hypot(v[0] - u[0], v[1] - u[1]);
 	const turn = (u: [number, number], v: [number, number], w: [number, number]) => {
 		const a1 = Math.atan2(v[1] - u[1], v[0] - u[0]), a2 = Math.atan2(w[1] - v[1], w[0] - v[0]);
@@ -80,6 +94,7 @@ export function smooth(p: [number, number][], maxDev: number, pre?: [number, num
 				m * m * m * p1[0] + 3 * m * m * t * c1[0] + 3 * m * t * t * c2[0] + t * t * t * p2[0],
 				m * m * m * p1[1] + 3 * m * m * t * c1[1] + 3 * m * t * t * c2[1] + t * t * t * p2[1],
 			]);
+			at?.push(i + t);
 		}
 	}
 	return out;
@@ -90,6 +105,8 @@ export interface OverlayEvent {
 	wx: number;
 	wy: number;
 	kind: string;
+	/** When it happened: shown once the replay has reached it. */
+	t: number;
 	/** A starburst's number (the level reached). */
 	label?: string;
 	/** The event was also a first (its milestone's line): a small star on its badge. */
@@ -104,8 +121,10 @@ export interface OverlayPin {
 	name: string;
 	level: number | null;
 	color: string;
-	/** Playing at the replay time (bright), else where last seen (dim). */
-	online: boolean;
+	/** Dimmed: the replay is at a time this character was not playing (it stands where last seen). */
+	dim: boolean;
+	/** The green dot: playing at the replay time, or, at the latest moment, seen in the last minutes. */
+	playing: boolean;
 	/** The focused character: drawn as an arrow turned to its heading (radians, clockwise from north). */
 	heading?: number;
 	id: string;
@@ -113,20 +132,21 @@ export interface OverlayPin {
 export interface OverlayData {
 	lines: OverlayLine[];
 	events: OverlayEvent[];
-	pins: OverlayPin[];
 	/** Many trails over each other (all play): translucent strokes without chevrons, so places
 	 *  passed often build up brighter instead of a tangle of solid lines. */
 	dense?: boolean;
 }
-export type Hit = { kind: 'pin'; pin: OverlayPin } | { kind: 'event'; event: OverlayEvent } | null;
+/** What is under a point: a pin, the events drawn as one badge there (the one shown first), or a
+ *  moment of a trail. */
+export type Hit = { kind: 'pin'; pin: OverlayPin } | { kind: 'event'; events: OverlayEvent[] } | { kind: 'trail'; line: OverlayLine; t: number } | null;
 
 /**
- * Douglas-Peucker on flat x, y pairs: the points kept (as flat pairs) so that none of the dropped
+ * Douglas-Peucker on flat x, y pairs: the indices of the points kept, so that none of the dropped
  * ones lies further than `tol` from the line. The first and last always stay.
  */
-export function simplifyFlat(p: ArrayLike<number>, tol: number): Float32Array {
+export function simplifyIdx(p: ArrayLike<number>, tol: number): Uint32Array {
 	const n = p.length >> 1;
-	if (n < 3) return Float32Array.from(p);
+	if (n < 3) return Uint32Array.from({ length: n }, (_, i) => i);
 	const keep = new Uint8Array(n);
 	keep[0] = keep[n - 1] = 1;
 	const stack: [number, number][] = [[0, n - 1]];
@@ -146,8 +166,8 @@ export function simplifyFlat(p: ArrayLike<number>, tol: number): Float32Array {
 		}
 	}
 	const out: number[] = [];
-	for (let i = 0; i < n; i++) if (keep[i]) out.push(p[2 * i], p[2 * i + 1]);
-	return Float32Array.from(out);
+	for (let i = 0; i < n; i++) if (keep[i]) out.push(i);
+	return Uint32Array.from(out);
 }
 
 /** Trails longer than this (points) are thinned for the zoom before drawing. */
@@ -165,20 +185,39 @@ const LEVELS_FROM = 0.035;
 const MIN_STEP = 1.5; // px: closer points are merged
 const DENSE_STROKE = 6; // points per stroke in dense mode
 
+/** Events closer than this (px) to one already drawn join its badge (a count on it). */
+const CLUSTER_PX = 15;
+/** How near (px) the pointer has to be to a trail to be on it. */
+const TRAIL_HIT_PX = 7;
+/** Which event of a pile shows: the lower, the more it matters. */
+const RANK: Record<string, number> = { level: 0, milestone: 1, death: 2, mark: 3, encounter: 4, rare: 5 };
+
+type Pt = [number, number];
+type Proj = (c: number, wx: number, wy: number) => Pt | null;
+/** A line as drawn in the current view: its screen points and the time of each. */
+type Geom = { serial: number; pts: Pt[]; ts: number[] } | { serial: number; pts: null };
+
 export class TrailOverlay {
 	private ctx: CanvasRenderingContext2D;
-	private data: OverlayData = { lines: [], events: [], pins: [] };
+	private data: OverlayData = { lines: [], events: [] };
+	private pinsNow: OverlayPin[] = [];
+	private t = Infinity;
+	/** The events by how much they matter, then newest first: the order piles are built in. */
+	private ranked: OverlayEvent[] = [];
 	private dirty = true;
 	private raf = 0;
-	private lastView = '';
+	private last = { x: NaN, y: NaN, zoom: NaN, c: NaN };
+	/** Bumped whenever the view or the canvas changes: screen lines of an older serial are stale. */
+	private serial = 0;
 	private w = 0;
 	private h = 0;
 	private zoom = 1;
 	private pills: [number, number, number, number][] = [];
-	private shown: { kind: 'pin' | 'event'; x: number; y: number; r: number; ref: OverlayPin | OverlayEvent }[] = [];
+	private shown: { x: number; y: number; r: number; box?: [number, number, number, number]; hit: NonNullable<Hit> }[] = [];
 	private resize: ResizeObserver;
 	/** Long trails thinned per zoom step (tolerance a power of two in yards), with their bounds. */
-	private thin = new WeakMap<ArrayLike<number>, { box: [number, number, number, number]; byTol: Map<number, Float32Array> }>();
+	private thin = new WeakMap<ArrayLike<number>, { box: [number, number, number, number]; byTol: Map<number, Uint32Array> }>();
+	private geom = new WeakMap<OverlayLine, Geom>();
 
 	constructor(
 		private canvas: HTMLCanvasElement,
@@ -190,10 +229,13 @@ export class TrailOverlay {
 		this.fit();
 		const loop = () => {
 			this.raf = requestAnimationFrame(loop);
-			const v = (this.map as unknown as { view: { x: number; y: number; zoom: number; c: number } }).view;
-			const key = v ? `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.zoom.toFixed(6)},${v.c}` : '';
-			if (this.dirty || key !== this.lastView) {
-				this.lastView = key;
+			const v = this.map.view, l = this.last;
+			const moved = !!v && (v.x !== l.x || v.y !== l.y || v.zoom !== l.zoom || v.c !== l.c);
+			if (moved) {
+				this.last = { x: v.x, y: v.y, zoom: v.zoom, c: v.c };
+				this.serial++;
+			}
+			if (this.dirty || moved) {
 				this.dirty = false;
 				this.draw();
 			}
@@ -206,18 +248,42 @@ export class TrailOverlay {
 		this.resize.disconnect();
 	}
 
+	/** What there is to draw: the trails whole and every event (the replay time decides what shows). */
 	set(data: OverlayData) {
 		this.data = data;
+		const rank = (e: OverlayEvent) => RANK[e.kind] ?? 9;
+		this.ranked = [...data.events].sort((a, b) => rank(a) - rank(b) || b.t - a.t);
 		this.dirty = true;
 	}
 
-	/** What is under a point in CSS px of the canvas: pins first, then events. */
+	/** The replay time and where everyone is then. */
+	setTime(t: number, pins: OverlayPin[]) {
+		this.t = t;
+		this.pinsNow = pins;
+		this.dirty = true;
+	}
+
+	/** What is under a point in CSS px of the canvas: pins first, then events, then a trail. */
 	hit(sx: number, sy: number): Hit {
 		for (let i = this.shown.length - 1; i >= 0; i--) {
 			const s = this.shown[i];
-			if (Math.hypot(s.x - sx, s.y - sy) <= s.r) return s.kind === 'pin' ? { kind: 'pin', pin: s.ref as OverlayPin } : { kind: 'event', event: s.ref as OverlayEvent };
+			if (s.box ? sx >= s.box[0] && sx <= s.box[0] + s.box[2] && sy >= s.box[1] && sy <= s.box[1] + s.box[3] : Math.hypot(s.x - sx, s.y - sy) <= s.r) return s.hit;
 		}
-		return null;
+		// The nearest trail within reach, at the moment the character passed that spot.
+		let best: { line: OverlayLine; t: number; d: number } | null = null;
+		for (const l of this.data.lines) {
+			const g = this.geom.get(l);
+			if (!g || g.serial !== this.serial || !g.pts) continue;
+			const p = g.pts;
+			for (let i = 1; i < p.length; i++) {
+				const [x0, y0] = p[i - 1], [x1, y1] = p[i];
+				const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
+				const u = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((sx - x0) * dx + (sy - y0) * dy) / len2));
+				const d = Math.hypot(sx - (x0 + dx * u), sy - (y0 + dy * u));
+				if (d <= TRAIL_HIT_PX && (!best || d < best.d)) best = { line: l, t: g.ts[i - 1] + (g.ts[i] - g.ts[i - 1]) * u, d };
+			}
+		}
+		return best ? { kind: 'trail', line: best.line, t: best.t } : null;
 	}
 
 	private fit() {
@@ -228,6 +294,7 @@ export class TrailOverlay {
 		this.canvas.width = Math.round(r.width * dpr);
 		this.canvas.height = Math.round(r.height * dpr);
 		this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		this.serial++;
 		this.dirty = true;
 	}
 
@@ -244,36 +311,26 @@ export class TrailOverlay {
 		ctx.clearRect(0, 0, this.w, this.h);
 		this.shown = [];
 		this.pills = [];
-		this.zoom = (this.map as unknown as { view?: { zoom: number } }).view?.zoom ?? 1;
+		this.zoom = this.map.view?.zoom ?? 1;
 		const cache = new Map<number, Affine | null>();
-		const proj = (c: number, wx: number, wy: number): [number, number] | null => {
+		const proj: Proj = (c, wx, wy) => {
 			if (!cache.has(c)) cache.set(c, this.affine(c, wx, wy));
 			const a = cache.get(c);
 			if (!a) return null;
 			const dx = wx - a.wx0, dy = wy - a.wy0;
 			return [a.x0 + a.ax * dx + a.bx * dy, a.y0 + a.ay * dx + a.by * dy];
 		};
-		const { lines, events, pins, dense } = this.data;
-		for (const l of lines.filter((l) => l.faint)) this.line(l, proj, !!dense);
-		for (const l of lines.filter((l) => !l.faint)) this.line(l, proj, !!dense);
-		for (const e of events) this.event(e, proj);
-		for (const p of [...pins].sort((a, b) => Number(a.online) - Number(b.online) || Number(a.heading !== undefined) - Number(b.heading !== undefined))) this.pin(p, proj);
+		const { lines, dense } = this.data;
+		// What is still to come first (faint), then the way come so far over it.
+		for (const l of lines) this.line(l, proj, !!dense, true);
+		for (const l of lines) this.line(l, proj, !!dense, false);
+		this.events(proj);
+		for (const p of [...this.pinsNow].sort((a, b) => Number(b.dim) - Number(a.dim) || Number(a.heading !== undefined) - Number(b.heading !== undefined))) this.pin(p, proj);
 	}
 
-	private screenPts(c: number, pts: ArrayLike<number>, proj: (c: number, wx: number, wy: number) => [number, number] | null): [number, number][] {
-		const out: [number, number][] = [];
-		for (let i = 0; i + 1 < pts.length; i += 2) {
-			const p = proj(c, pts[i], pts[i + 1]);
-			if (!p) return [];
-			const last = out[out.length - 1];
-			if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= MIN_STEP || i + 2 >= pts.length) out.push(p);
-		}
-		return out;
-	}
-
-	/** A long trail's points thinned for this zoom (cached per power-of-two tolerance), or null when
-	 *  it lies wholly off screen. Short trails come back as they are. */
-	private visiblePts(l: OverlayLine, pxPerYd: number, proj: (c: number, wx: number, wy: number) => [number, number] | null): ArrayLike<number> | null {
+	/** A long trail's points thinned for this zoom (cached per power-of-two tolerance): the indices
+	 *  kept, `undefined` for all of them, or null when the trail lies wholly off screen. */
+	private visibleIdx(l: OverlayLine, pxPerYd: number, proj: Proj): Uint32Array | undefined | null {
 		let e = this.thin.get(l.pts);
 		if (!e) {
 			const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
@@ -292,27 +349,83 @@ export class TrailOverlay {
 			const xs = corners.map((p) => p![0]), ys = corners.map((p) => p![1]), m = 12;
 			if (Math.max(...xs) < -m || Math.min(...xs) > this.w + m || Math.max(...ys) < -m || Math.min(...ys) > this.h + m) return null;
 		}
-		if (l.pts.length < 2 * RESIMPLIFY_FROM || !(pxPerYd > 0)) return l.pts;
+		if (l.pts.length < 2 * RESIMPLIFY_FROM || !(pxPerYd > 0)) return undefined;
 		const tol = 2 ** Math.floor(Math.log2(RESIMPLIFY_PX / pxPerYd));
-		if (tol < 0.75) return l.pts; // finer than the server's own simplification already
+		if (tol < 0.75) return undefined; // finer than the server's own simplification already
 		let thin = e.byTol.get(tol);
-		if (!thin) e.byTol.set(tol, (thin = simplifyFlat(l.pts, tol)));
+		if (!thin) e.byTol.set(tol, (thin = simplifyIdx(l.pts, tol)));
 		return thin;
 	}
 
-	private line(l: OverlayLine, proj: (c: number, wx: number, wy: number) => [number, number] | null, dense: boolean) {
-		if (l.pts.length < 4) return;
-		// Screen px per world yard here (MapView's view is linear in yards).
-		const a = proj(l.c, l.pts[0], l.pts[1]), b = proj(l.c, l.pts[0] + 1, l.pts[1]);
-		const pxPerYd = a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
-		const given = this.visiblePts(l, pxPerYd, proj);
-		if (!given) return;
-		const raw = this.screenPts(l.c, given, proj);
-		if (raw.length < 2) return;
+	/** The line as drawn in this view (kept until the view changes): thinned, projected, rounded,
+	 *  each screen point with its time. */
+	private screenLine(l: OverlayLine, proj: Proj): Geom {
+		const had = this.geom.get(l);
+		if (had && had.serial === this.serial) return had;
+		const none: Geom = { serial: this.serial, pts: null };
+		const make = (): Geom => {
+			if (l.pts.length < 4) return none;
+			// Screen px per world yard here (MapView's view is linear in yards).
+			const a = proj(l.c, l.pts[0], l.pts[1]), b = proj(l.c, l.pts[0] + 1, l.pts[1]);
+			if (!a || !b) return none;
+			const pxPerYd = Math.hypot(b[0] - a[0], b[1] - a[1]);
+			const idx = this.visibleIdx(l, pxPerYd, proj);
+			if (idx === null) return none;
+			const n = idx ? idx.length : l.pts.length >> 1;
+			const raw: Pt[] = [], rawT: number[] = [];
+			for (let k = 0; k < n; k++) {
+				const i = idx ? idx[k] : k;
+				const p = proj(l.c, l.pts[2 * i], l.pts[2 * i + 1]);
+				if (!p) return none;
+				const last = raw[raw.length - 1];
+				if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= MIN_STEP || k === n - 1) {
+					raw.push(p);
+					rawT.push(l.ts[i]);
+				}
+			}
+			if (raw.length < 2) return none;
+			// A flight is a straight guess between take-off and landing: never bent.
+			if (l.style === 'flight') return { serial: this.serial, pts: raw, ts: rawT };
+			const side = (q?: [number, number]) => (q ? (proj(l.c, q[0], q[1]) ?? undefined) : undefined);
+			const at: number[] = [];
+			const pts = smooth(raw, SMOOTH_YD * pxPerYd, side(l.pre), side(l.post), at);
+			const ts = at.map((f) => {
+				const i = Math.min(rawT.length - 2, Math.floor(f));
+				return rawT[i] + (rawT[i + 1] - rawT[i]) * (f - i);
+			});
+			return { serial: this.serial, pts, ts };
+		};
+		const g = make();
+		this.geom.set(l, g);
+		return g;
+	}
+
+	/** One line's part before the replay time (`future` false) or after it (faint). */
+	private line(l: OverlayLine, proj: Proj, dense: boolean, future: boolean) {
+		const g = this.screenLine(l, proj);
+		if (!g.pts) return;
+		const all = g.pts, ts = g.ts, t = this.t;
+		let pts: Pt[];
+		if (t >= ts[ts.length - 1]) {
+			if (future) return;
+			pts = all;
+		} else if (t <= ts[0]) {
+			if (!future) return;
+			pts = all;
+		} else {
+			// The first point after t, and the spot reached at t between it and the one before.
+			let lo = 0, hi = ts.length - 1;
+			while (lo < hi - 1) {
+				const mid = (lo + hi) >> 1;
+				if (ts[mid] <= t) lo = mid;
+				else hi = mid;
+			}
+			const f = (t - ts[lo]) / (ts[hi] - ts[lo] || 1);
+			const cut: Pt = [all[lo][0] + (all[hi][0] - all[lo][0]) * f, all[lo][1] + (all[hi][1] - all[lo][1]) * f];
+			pts = future ? [cut, ...all.slice(hi)] : [...all.slice(0, lo + 1), cut];
+		}
+		if (pts.length < 2) return;
 		const flight = l.style === 'flight', ghost = l.style === 'ghost', mount = l.style === 'mount';
-		// A flight is a straight guess between take-off and landing: never bent.
-		const side = (q?: [number, number]) => (q ? (proj(l.c, q[0], q[1]) ?? undefined) : undefined);
-		const pts = flight ? raw : smooth(raw, SMOOTH_YD * pxPerYd, side(l.pre), side(l.post));
 		const ctx = this.ctx;
 		const path = (from = 0, to = pts.length - 1) => {
 			ctx.beginPath();
@@ -326,7 +439,7 @@ export class TrailOverlay {
 			// Short translucent strokes: where the trail crosses itself or comes back, they add up.
 			// Butt caps, so the joins between strokes don't stack into dots.
 			ctx.lineCap = 'butt';
-			ctx.globalAlpha = l.faint ? 0.12 : 0.34;
+			ctx.globalAlpha = future ? 0.12 : 0.34;
 			ctx.strokeStyle = l.color;
 			ctx.lineWidth = mount ? 4 : 3;
 			if (ghost) ctx.setLineDash([2, 6]);
@@ -337,7 +450,7 @@ export class TrailOverlay {
 			ctx.restore();
 			return;
 		}
-		ctx.globalAlpha = (l.faint ? 0.35 : 1) * (flight ? 0.7 : 1);
+		ctx.globalAlpha = (future ? 0.35 : 1) * (flight ? 0.7 : 1);
 		if (ghost) ctx.setLineDash([2, 6]);
 		if (flight) ctx.setLineDash([7, 7]);
 		// casing, then the colour
@@ -358,7 +471,7 @@ export class TrailOverlay {
 		}
 		ctx.setLineDash([]);
 		// direction chevrons along the line
-		if (!l.faint) {
+		if (!future) {
 			const every = flight ? CHEVRON_EVERY * 3 : CHEVRON_EVERY;
 			let carry = every / 2;
 			ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
@@ -381,6 +494,50 @@ export class TrailOverlay {
 				carry = d - len;
 			}
 		}
+		ctx.restore();
+	}
+
+	/** The events the replay has reached, piled where they would cover each other: each pile shows
+	 *  the one that matters most (a level over a first over a death over the rest) and how many
+	 *  it holds. */
+	private events(proj: Proj) {
+		const piles: { x: number; y: number; items: OverlayEvent[] }[] = [];
+		for (const e of this.ranked) {
+			if (e.t > this.t) continue;
+			if (this.zoom < (e.kind === 'level' || e.kind === 'milestone' ? LEVELS_FROM : EVENTS_FROM)) continue;
+			const p = proj(e.c, e.wx, e.wy);
+			if (!p || p[0] < -30 || p[1] < -30 || p[0] > this.w + 30 || p[1] > this.h + 30) continue;
+			const pile = piles.find((q) => Math.hypot(q.x - p[0], q.y - p[1]) < CLUSTER_PX);
+			if (pile) pile.items.push(e);
+			else piles.push({ x: p[0], y: p[1], items: [e] });
+		}
+		// The least important first, so the ones that matter lie on top.
+		for (let i = piles.length - 1; i >= 0; i--) {
+			const { x, y, items } = piles[i];
+			const r = this.event(items[0], x, y);
+			if (items.length > 1) this.count(x + r * 0.75, y + r * 0.75, items.length);
+			this.shown.push({ x, y, r: r + 2, hit: { kind: 'event', events: items } });
+		}
+	}
+
+	/** How many events a badge stands for, on its lower right. */
+	private count(x: number, y: number, n: number) {
+		const ctx = this.ctx;
+		const text = n > 99 ? '99+' : String(n);
+		ctx.save();
+		ctx.font = '700 9px Inter, system-ui, sans-serif';
+		const w = Math.max(13, ctx.measureText(text).width + 7);
+		ctx.beginPath();
+		ctx.roundRect(x - w / 2, y - 6.5, w, 13, 6.5);
+		ctx.fillStyle = '#f7f8fd';
+		ctx.strokeStyle = 'rgba(8, 14, 24, 0.9)';
+		ctx.lineWidth = 1.2;
+		ctx.fill();
+		ctx.stroke();
+		ctx.fillStyle = '#10141f';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(text, x, y + 0.5);
 		ctx.restore();
 	}
 
@@ -417,11 +574,8 @@ export class TrailOverlay {
 		ctx.restore();
 	}
 
-	private event(e: OverlayEvent, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
-		if (this.zoom < (e.kind === 'level' || e.kind === 'milestone' ? LEVELS_FROM : EVENTS_FROM)) return;
-		const p = proj(e.c, e.wx, e.wy);
-		if (!p || p[0] < -30 || p[1] < -30 || p[0] > this.w + 30 || p[1] > this.h + 30) return;
-		const [x, y] = p;
+	/** Draws one event's badge at x, y; returns its radius. */
+	private event(e: OverlayEvent, x: number, y: number): number {
 		const ctx = this.ctx;
 		if (e.kind === 'level') {
 			// a gold starburst with the level
@@ -447,15 +601,13 @@ export class TrailOverlay {
 			ctx.fillText(e.label ?? '', x, y + 0.5);
 			ctx.restore();
 			if (e.first) this.star(x + 10, y - 10, 6);
-			this.shown.push({ kind: 'event', x, y, r: 13, ref: e });
-			return;
+			return 13;
 		}
 		if (e.kind === 'milestone') {
 			// a first or a round number: a pale five-pointed star
 			this.glow(x, y, 18, '#ffe9a8', 0.45);
 			this.star(x, y, 10);
-			this.shown.push({ kind: 'event', x, y, r: 11, ref: e });
-			return;
+			return 10;
 		}
 		// a small round badge in the event's colour, with its sign
 		const sign: Record<string, string> = { death: '✕', mark: '★', accept: '!', turnin: '?', explore: '◆', enter: '⌂', encounter: '☠', taxi: '➶', bind: '⌂', learn: '✦', rare: '◎' };
@@ -475,16 +627,16 @@ export class TrailOverlay {
 		ctx.fillText(sign[e.kind] ?? '•', x, y + 0.5);
 		ctx.restore();
 		if (e.first) this.star(x + 7, y - 7, 6);
-		this.shown.push({ kind: 'event', x, y, r: 10, ref: e });
+		return 8;
 	}
 
-	private pin(pin: OverlayPin, proj: (c: number, wx: number, wy: number) => [number, number] | null) {
+	private pin(pin: OverlayPin, proj: Proj) {
 		const p = proj(pin.c, pin.wx, pin.wy);
 		if (!p) return;
 		const [x, y] = p;
 		const ctx = this.ctx;
 		ctx.save();
-		ctx.globalAlpha = pin.online || pin.heading !== undefined ? 1 : 0.6;
+		ctx.globalAlpha = pin.dim && pin.heading === undefined ? 0.6 : 1;
 		this.glow(x, y, 20, pin.color, 0.5);
 		if (pin.heading !== undefined) {
 			// the focused character: an arrow in its colour, turned to its heading
@@ -511,13 +663,16 @@ export class TrailOverlay {
 			ctx.fill();
 			ctx.stroke();
 		}
-		// the name pill, to the right: name, level, a dot in the character's colour
+		// the name pill: name, level, a dot (green while playing)
 		ctx.font = '600 12px Inter, system-ui, sans-serif';
 		const level = pin.level != null ? ` ${pin.level}` : '';
 		const tw = ctx.measureText(pin.name).width;
 		ctx.font = '500 11px Inter, system-ui, sans-serif';
 		const lw = level ? ctx.measureText(level).width : 0;
-		const pw = tw + lw + 30, ph = 22, px = x + 13;
+		// The name pill, to the right of the pin; to its left where the map's edge would cut it off.
+		const pw = tw + lw + 30, ph = 22;
+		const left = x + 13 + pw > this.w - 6 && x - 13 - pw >= 6;
+		const px = left ? x - 13 - pw : x + 13;
 		// Characters together: their pills stack instead of hiding each other.
 		let py = y - ph / 2;
 		while (this.pills.some(([ax, ay, aw, ah]) => px < ax + aw && px + pw > ax && py < ay + ah && py + ph > ay)) py += ph + 3;
@@ -525,8 +680,8 @@ export class TrailOverlay {
 		const ty = py + ph / 2;
 		if (py !== y - ph / 2) {
 			ctx.beginPath();
-			ctx.moveTo(x + 6, y);
-			ctx.lineTo(px, ty);
+			ctx.moveTo(left ? x - 6 : x + 6, y);
+			ctx.lineTo(left ? px + pw : px, ty);
 			ctx.strokeStyle = pin.color;
 			ctx.lineWidth = 1.2;
 			ctx.stroke();
@@ -550,11 +705,13 @@ export class TrailOverlay {
 		}
 		ctx.beginPath();
 		ctx.arc(px + pw - 9, ty, 3, 0, Math.PI * 2);
-		ctx.fillStyle = pin.online ? '#6bd999' : pin.color;
+		// Green while playing, grey when not (as the sidebar's dot): never the character's own colour,
+		// which may itself be a green.
+		ctx.fillStyle = pin.playing ? '#6bd999' : '#5b6278';
 		ctx.fill();
 		ctx.restore();
-		this.shown.push({ kind: 'pin', x, y, r: 12, ref: pin });
-		this.shown.push({ kind: 'pin', x: px + pw / 2, y: ty, r: pw / 2, ref: pin });
+		this.shown.push({ x, y, r: 12, hit: { kind: 'pin', pin } });
+		this.shown.push({ x: px + pw / 2, y: ty, r: 0, box: [px, py, pw, ph], hit: { kind: 'pin', pin } });
 	}
 }
 

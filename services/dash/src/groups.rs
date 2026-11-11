@@ -131,11 +131,16 @@ pub fn scope(db: &Connection, headers: &HeaderMap) -> rusqlite::Result<Option<Sc
 	Ok(Some(Scope { grp, name, chars }))
 }
 
-/// After an upload: the characters it carried belong to the uploader's group.
+/// After an upload: the characters it carried belong to the uploader's group, when they are new,
+/// have no group yet, or were first uploaded by this same install (a PC whose code was changed
+/// moves its characters with it). A character another install brought first stays where it is:
+/// naming someone else's character in an upload does not take it.
 pub fn claim(db: &Connection, grp: &str, install: &str, chars: &[&str]) -> rusqlite::Result<()> {
-	db.execute("UPDATE characters SET grp = ?1 WHERE char_id IN (SELECT DISTINCT char_id FROM chunks WHERE install = ?2)", params![grp, install])?;
+	const MAY: &str = "(grp IS NULL OR grp = '' OR grp = ?1
+		OR COALESCE((SELECT k.install FROM chunks k WHERE k.char_id = characters.char_id ORDER BY k.received, k.rowid LIMIT 1), ?2) = ?2)";
+	db.execute(&format!("UPDATE characters SET grp = ?1 WHERE char_id IN (SELECT DISTINCT char_id FROM chunks WHERE install = ?2) AND {MAY}"), params![grp, install])?;
 	for c in chars {
-		db.execute("UPDATE characters SET grp = ?1 WHERE char_id = ?2", params![grp, c])?;
+		db.execute(&format!("UPDATE characters SET grp = ?1 WHERE char_id = ?3 AND {MAY}"), params![grp, install, c])?;
 	}
 	Ok(())
 }
@@ -164,5 +169,27 @@ mod tests {
 		let c = new_code();
 		assert_eq!(c.len(), 19);
 		assert_ne!(c, new_code());
+	}
+
+	#[test]
+	fn a_character_stays_with_the_install_that_brought_it() {
+		let db = crate::db::open(":memory:").unwrap();
+		let chunk = |install: &str, seq: i64, ch: &str, at: i64| {
+			db.execute("INSERT INTO chunks (install, seq, char_id, epoch, first_t, last_t, received, text) VALUES (?1, ?2, ?3, 0, 0, 1, ?4, '')", params![install, seq, ch, at]).unwrap();
+			db.execute("INSERT OR IGNORE INTO characters (char_id) VALUES (?1)", [ch]).unwrap();
+		};
+		let grp = |ch: &str| db.query_row("SELECT grp FROM characters WHERE char_id = ?1", [ch], |r| r.get::<_, Option<String>>(0)).unwrap();
+		chunk("pc-a", 1, "hero", 100);
+		claim(&db, "home", "pc-a", &["hero"]).unwrap();
+		assert_eq!(grp("hero").as_deref(), Some("home"));
+		// Another install names the character (and even uploads a chunk for it): it stays.
+		chunk("pc-x", 1, "hero", 200);
+		chunk("pc-x", 2, "theirs", 200);
+		claim(&db, "others", "pc-x", &["hero", "theirs"]).unwrap();
+		assert_eq!(grp("hero").as_deref(), Some("home"));
+		assert_eq!(grp("theirs").as_deref(), Some("others"));
+		// The PC that brought it changes its code: the character moves with it.
+		claim(&db, "new-home", "pc-a", &["hero"]).unwrap();
+		assert_eq!(grp("hero").as_deref(), Some("new-home"));
 	}
 }

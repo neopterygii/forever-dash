@@ -28,7 +28,17 @@
 		if (dash.mode === 'overview') return dash.overview ? `All characters · last ${dash.overview.hours} h of play each` : '';
 		const f = dash.focus;
 		const c = f && dash.chars.find((x) => x.id === f.id);
-		return c && f ? `${fullName(c)} · level ${c.level} · ${f.kept} of ${f.points} points` : '';
+		return c && f ? `${fullName(c)} · level ${c.level ?? '?'}` : '';
+	});
+
+	// The address follows what is shown (the moment, the journal), so a reload or a copied link
+	// opens the same thing. Not while playing: the moment is written when the replay stops.
+	$effect(() => {
+		dash.t;
+		dash.journalOpen;
+		if (dash.playing || !dash.timeline || dash.signedOut) return;
+		const timer = setTimeout(() => dash.syncLocation(), 400);
+		return () => clearTimeout(timer);
 	});
 </script>
 
@@ -43,6 +53,9 @@
 				<button class="back" title="Back to all characters (Esc)" onclick={() => dash.run(dash.leaveFocus())}><i></i>All characters</button>
 			{/if}
 			<span class="who">{who}</span>
+			{#if dash.fresh}
+				<button class="fresh" title="Newer play has been uploaded" onclick={() => dash.run(dash.showLatest())}><b></b>New play · show</button>
+			{/if}
 			<button class="jt pt" class:on={!!dash.people} aria-pressed={!!dash.people} onclick={() => (dash.people = dash.people ? null : { who: null })}>
 				<img src="/glyph/character.png" alt="" />People
 			</button>
@@ -75,6 +88,8 @@
 	.back:focus-visible { outline: 1px solid var(--focus); }
 	.back i { width: 14px; height: 14px; background: currentColor; mask: url(/glyph/chevron-left.png) center / contain no-repeat; -webkit-mask: url(/glyph/chevron-left.png) center / contain no-repeat; }
 	.who { color: var(--textDim); margin-right: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.fresh { display: inline-flex; align-items: center; gap: 6px; flex: none; background: var(--chip); border: 1px solid var(--accent); padding: 5px 10px; border-radius: 999px; color: var(--accent); font-weight: 600; }
+	.fresh b { width: 7px; height: 7px; border-radius: 50%; background: #6bd999; }
 	.jt { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border: 0; padding: 6px 12px; border-radius: 8px; color: var(--textDim); font-weight: 600; }
 	.jt img { width: 14px; height: 14px; opacity: 0.8; }
 	.jt.on { background: var(--accent); color: var(--onAccent); }

@@ -35,7 +35,10 @@ export interface MapViewApi {
 	setCharacter(ch: { c: number; wx: number; wy: number; heading: number } | null): void;
 	setContinent(c: number): void;
 	setMode(mode: 'world' | 'continent'): void;
-	setView(v: { c?: number; wx?: number; wy?: number; zoom?: number }, opts?: { animate?: boolean }): void;
+	/** The view now: the continent under the centre, the centre in its plane (x = -wy, y = -wx) and world yards, CSS px per yard. */
+	readonly view: { mode: string; c: number; x: number; y: number; wx: number; wy: number; zoom: number };
+	/** x, y: the centre in the continent's plane (x = -wy, y = -wx). */
+	setView(v: { c?: number; wx?: number; wy?: number; x?: number; y?: number; zoom?: number }, opts?: { animate?: boolean }): void;
 	fitWorld(c: number, pts: [number, number][], opts?: { padding?: number; maxZoom?: number; animate?: boolean; right?: number }): void;
 	resize(): void;
 	toScreen(c: number, wx: number, wy: number): { x: number; y: number } | null;
@@ -48,10 +51,4 @@ export interface MapViewApi {
 
 export function createMapView(canvas: HTMLCanvasElement, opts: { artBase: string }): MapViewApi {
 	return new JsMapView(canvas, opts) as MapViewApi;
-}
-
-/** Where continent c sits in world mode (MapView's layout), or null; MapView keeps it private. */
-export function continentOffset(view: MapViewApi, c: number): { ox: number; oy: number } | null {
-	const off = (view as unknown as { _off?: (c: number) => { ox: number; oy: number } | null })._off;
-	return typeof off === 'function' ? off.call(view, c) : null;
 }
