@@ -43,7 +43,6 @@ return {
 	-- Step 7: Grazle
 	-- {npc:15395} Nafien · {zone:1448} Felwood
 	["{npc:15395} waits at the north end of {zone:1448}"] = "{npc:15395} wartet am Nordende des {zone:1448}",
-	["Five feathers buy a little Timbermaw reputation"] = "Fünf Federn bringen ein wenig Ruf bei der Holzschlundfeste",
 
 	-- Step 8: Level 52.69
 	["Level 52.69"] = "",
@@ -83,7 +82,7 @@ return {
 	-- Step 15: Irontree Woods
 	-- {area:1767} Irontree Woods · {area:2618} Jadefire Run · {item:11503} Blood Amber
 	["The Warpwood treants of {area:1767}, east of {area:2618}, carry the {item:11503}."] = "Die Wucherborkentreants im {area:1767}, östlich der {area:2618}, tragen die {item:11503}.",
-	["Below ground"] = "",
+	["Below ground"] = "Unter der Erde",
 
 	-- Step 16: Nafien
 	-- {area:1769} Timbermaw Hold · {npc:15395} Nafien
@@ -126,6 +125,7 @@ return {
 	["Ends in the {zone:1413}: keep it"] = "Endet im {zone:1413}: Behalte es",
 
 	-- No longer in the guide (its English changed or it went away): reuse or delete.
+	-- ["Five feathers buy a little Timbermaw reputation"] = "Fünf Federn bringen ein wenig Ruf bei der Holzschlundfeste",
 	-- ["Fly from {area:1998} to the Sanctuary's end of the road, or ride south along it."] = "Flieg von {area:1998} zum Ende der Straße beim Refugium oder reite sie nach Süden entlang.",
 	-- ["Keep her alive until she is out of the cave"] = "Halte sie am Leben, bis sie aus der Höhle ist",
 	-- ["Oozes"] = "Schlammbestien",

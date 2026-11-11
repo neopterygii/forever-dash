@@ -20,6 +20,7 @@ step Zeppelin to Orgrimmar
 
 step Orgrimmar
   zone Orgrimmar
+  when !has 14047 x60
   goto 45.3,63.7 "Orgrimmar flight master"
 # Built from the simulator's consensus route (Horde, visits 102-116) and
 # machine-checked with lint; not play-tested on Forever yet. The end of the
@@ -75,16 +76,16 @@ step Orgrimmar
 
 # ---------------------------------------------------------------- Orgrimmar
 
-step Zeppelin to Orgrimmar
-  when complete 7836
+step Vehena
+  when has 14047 x60
   zone Orgrimmar
-  tip From the Undercity, take the zeppelin from the tower outside the city to Orgrimmar.
-  turnin 7836                         -- sixty Runecloth
+  tip In the Valley of Spirits.
+  turnin 7836 direct -- sixty Runecloth
 
 step Rashona Straglash
-  when complete 7824
+  when has 14047 x60
   zone Orgrimmar
-  turnin 7824                         -- sixty Runecloth
+  turnin 7824 direct -- sixty Runecloth
 
 step Fly to Splintertree Post
   zone Orgrimmar
@@ -133,6 +134,12 @@ step A Final Blow
   kill 9861 quest 5242.1              -- Below ground
   kill 9860 quest 5242.2              -- Below ground
   collect 13207 quest 5242.3          -- Below ground
+  collect 11515 x6 -- Corrupted Soul Shards from the cultists, Salve via Hunting
+
+step Maybess Riverbreeze
+  when available 5887
+  tip On the way back south to Greta, Maybess takes the shards on the west side of the Sanctuary.
+  turnin 5887 direct -- Maybess Riverbreeze
 
 step Greta Mosshoof
   tip South to the Sanctuary once more.
@@ -166,8 +173,7 @@ step Rabine Saturna
   note Rabine's Shards of the Felvine needs Dire Maul. Skip it.
 
 step Umber
-  accept 1185                         -- Umber walks around Nighthaven: look inside the circle on the map
-  turnin 1185
+  turnin 1185 direct
 
 step Winterspring
   zone Winterspring
@@ -190,15 +196,14 @@ step Winterfall Runners
 
 step Salfa
   turnin 8464
-  accept 8469
 
 step Beads for Salfa
   tip Any Winterfall furbolg can carry the beads; the camps just south of Salfa are the closest.
   goto 31.6,36.6 "Frostfire Winterfall camp"
-  collect 21383 quest 8469.1
+  collect 21383 x5
 
 step Salfa
-  turnin 8469
+  turnin 8469 direct
 
 step Meilosh
   when complete 6031
@@ -209,8 +214,8 @@ step Meilosh
 step Kernda
   when onquest 8470
   zone Felwood
-  tip Only at Neutral with the Timbermaw: Kernda waits at the tunnel mouth of Timbermaw Hold.
-  turnin 8470 optional                -- Kernda walks around here: look inside the circle on the map
+  tip The Deadwood totem from Felpaw Village, if Kernda didn't take it then: she waits at the tunnel mouth of Timbermaw Hold and speaks to you from Neutral with the Timbermaw, which the Deadwood furbolgs of Felwood brought you to.
+  turnin 8470                         -- Kernda walks around here: look inside the circle on the map
 
 step Winterspring
   zone Winterspring

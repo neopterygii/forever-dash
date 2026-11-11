@@ -34,7 +34,13 @@ return {
 	["Gringer, the flight master, waits on {area:35}'s upper deck. The quest givers stand on the boardwalks around the harbour and in the inn."] = "",
 	-- {npc:2495} Drizzlik
 	["{npc:2495}: the Snapjaw skins gathered earlier; inside"] = "",
+	-- {npc:2495} Drizzlik · {npc:2635} Elder Saltwater Crocolisk · {object:3202} Grom'gol
+	["{npc:2495}: the {npc:2635} suns on the coast between Zul'Kunda and {object:3202}, later on this loop"] = "{npc:2495}: {npc:2635}은(는) 줄쿤다와 {object:3202} 사이 해안에서 햇볕을 쬐고 있습니다. 이 경로 후반에 들릅니다",
+	-- {npc:4631} Wharfmaster Lozgil
+	["{npc:4631}, on the docks: Gazlowe's letter, if you carry it"] = "{npc:4631}, 부두: 가즐로가 보낸 편지를 가지고 있다면",
 	["\"Sea Wolf\" MacKinley, on the top floor"] = "",
+	-- {npc:2496} Baron Revilgaz
+	["{npc:2496}, on the balcony beside MacKinley"] = "{npc:2496}, 맥킨리 옆 발코니",
 	["Inside"] = "",
 
 	-- Step 7: Bloodsail Correspondence
@@ -58,45 +64,48 @@ return {
 	-- {zone:1435} Swamp of Sorrows
 	["for a later stop in the {zone:1435}"] = "나중에 {zone:1435}에 들를 때",
 
-	-- Step 12: Witch Doctor Unbagwa
-	-- {area:35} Booty Bay · {area:1737} Mistvale Valley
-	["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "길을 따라 {area:35}에서 북쪽으로 가세요. 운바그와는 길 동쪽 {area:1737}의 언덕에 앉아 있습니다.",
-	-- {area:1742} Spirit Den
-	["Inside {area:1742}"] = "",
-
-	-- Step 13: Mistvale gorillas
+	-- Step 12: Mistvale gorillas
 	["Mistvale gorillas"] = "안개계곡고릴라",
 	["The gorillas roam the valley around Unbagwa. The elders drop the giblets; any of them can drop a fang."] = "고릴라는 운바그와 주변 골짜기를 돌아다닙니다. 덩치큰 고릴라가 내장을 떨어뜨리고, 모든 고릴라가 송곳니를 떨어뜨릴 수 있습니다.",
 
-	-- Step 14: Witch Doctor Unbagwa
+	-- Step 13: Witch Doctor Unbagwa
 	-- {npc:1514} Mokk the Savage
 	["Hand Unbagwa the fangs and stay by him: he calls three waves of gorillas, then {npc:1514}. Fight them one at a time."] = "운바그와에게 송곳니를 건네고 곁에 있으세요. 그가 고릴라 세 무리를 부른 뒤 {npc:1514}을(를) 부릅니다. 한 번에 하나씩 싸우세요.",
+	-- {area:1742} Spirit Den
+	["Inside {area:1742}"] = "",
 
-	-- Step 16: Venture Co. mine
+	-- Step 15: Venture Co. mine
 	["Venture Co. mine"] = "투자개발회사 광산",
 	-- plural, as words: Shadowmaw Panthers = {npc:684} Shadowmaw Panther
 	["Further north, the goblins of the Venture Co. dig at the mine east of the road; miners, foremen, surveyors and tinkerers all drop the crystals.\nCareful: Stealthed Shadowmaw Panthers and Stranglethorn Tigresses roam the area around the camp."] = "",
 
-	-- Step 18: Nesingwary's camp
+	-- Step 17: Nesingwary's camp
 	["Nesingwary's camp"] = "네싱워리의 야영지",
 	["Head north up the road; the hunters camp on the hill above the river."] = "",
 
-	-- Step 20: Zul'Kunda
+	-- Step 19: Zul'Kunda
 	["Zul'Kunda"] = "줄쿤다",
-	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman
-	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "",
+	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman · {object:3202} Grom'gol · {npc:2635} Elder Saltwater Crocolisk · {npc:2495} Drizzlik
+	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead.\nOn the coast between Zul'Kunda and {object:3202} an {npc:2635} (level 38 elite) shares the spawns of the ordinary crocolisks: kill it if it is up and take its skin for {npc:2495}."] = "원정대 서쪽, 줄쿤다의 폐허에 붉은머리부족 족장 {npc:1061}와(과) {npc:1062}이(가) 함께 서 있습니다. 먼저 호위병을 처치한 뒤 끌어오세요. 41레벨이 될 때까지 이곳에서 붉은머리부족을 처치하세요. 다음에 가마솥에서 받는 {quest:586}은(는) 41-43레벨 백골가루부족에게 보냅니다. 또는 파티와 함께 {area:1517} 던전을 도세요.\n줄쿤다와 {object:3202} 사이 해안에서는 {npc:2635}(38레벨 정예)이(가) 일반 악어와 같은 자리에 나타납니다. 나타나 있다면 처치하고 {npc:2495}에게 줄 가죽을 챙기세요.",
 	-- {object:52} Fall of Gurubashi
 	["from the {object:52}, in the ruins"] = "",
 	-- {quest:586} Speaking with Gan'zulah
 	["grind on the Bloodscalps here: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43"] = "",
 
-	-- Step 21: Grom'gol
+	-- Step 20: Grom'gol
 	-- {object:2076} Bubbling Cauldron · {npc:2497} Nimboya
 	["the {object:2076}, beside {npc:2497}"] = "{npc:2497} 옆의 {object:2076}",
 	-- {npc:2497} Nimboya · {zone:1425} Hinterlands
 	["{npc:2497}: for the {zone:1425}, around level 48"] = "",
 	-- {npc:2519} Kin'weelay
 	["{npc:2519}: the trophy skulls stand in the Skullsplitter ruins, later on this loop"] = "",
+	-- {npc:2519} Kin'weelay · {area:104} Vile Reef
+	["{npc:2519}: the cavern entrance under the {area:104}, west of the camp"] = "{npc:2519}: 야영지 서쪽, {area:104} 아래의 동굴 입구",
+
+	-- Step 21: The Vile Reef
+	-- {quest:95770} Locating the Lost City · {object:3202} Grom'gol · {area:104} Vile Reef
+	["{quest:95770}: west of {object:3202}, swim out over the {area:104} and dive to the cavern entrance in the reef; the quest completes as you find it. Leave the cavern for now: the jungle stalkers are south along the coast."] = "{quest:95770}: {object:3202} 서쪽으로 {area:104} 위를 헤엄쳐 나가 암초 속 동굴 입구로 잠수하세요. 입구를 찾으면 퀘스트가 완료됩니다. 동굴은 일단 그냥 두세요. 줄무늬정글랩터는 해안을 따라 남쪽에 있습니다.",
+	["the Drowned City's entrance, underwater"] = "물속에 있는 수몰된 도시의 입구",
 
 	-- Step 22: Jungle stalkers
 	["Jungle stalkers"] = "줄무늬정글랩터",
@@ -120,6 +129,8 @@ return {
 	["{npc:737}, upstairs: the tusks come from the Skullsplitters, later on this loop"] = "",
 	-- {zone:1446} Tanaris
 	["MacKinley, on the top floor: for Stoley in {zone:1446}"] = "",
+	-- {npc:2495} Drizzlik · {item:4105} Elder Crocolisk Skin
+	["{npc:2495}, inside: the {item:4105}"] = "{npc:2495}, 안쪽: {item:4105}",
 
 	-- Step 25: Zanzil's camps
 	["Zanzil's camps"] = "잔질의 야영지",
@@ -137,7 +148,7 @@ return {
 	["Skullsplitter warriors"] = "백골가루부족 전사",
 	-- {npc:669} Skullsplitter Hunter
 	["{npc:669} walks around here: look inside the circle on the map"] = "",
-	["Below ground"] = "",
+	["Below ground"] = "지하",
 
 	-- Step 28: Balia'mah Ruins: kill these as you meet them
 	-- {area:127} Balia'mah Ruins
@@ -265,6 +276,7 @@ return {
 	-- ["Ride west along the road to the draenei camp at the {area:657}, near the way in from {zone:1430}."] = "길을 따라 서쪽으로 {zone:1430}에서 들어오는 길 근처, {area:657}의 드레나이 야영지로 가세요.",
 	-- ["Ride west to {object:3202}."] = "서쪽의 {object:3202}(으)로 가세요.",
 	-- ["Sawtooth snappers"] = "무쇠턱 톱니악어",
+	-- ["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "길을 따라 {area:35}에서 북쪽으로 가세요. 운바그와는 길 동쪽 {area:1737}의 언덕에 앉아 있습니다.",
 	-- ["The boat lands in {area:35}'s harbour. The quest givers stand on the boardwalks around the harbour and in the inn."] = "배는 {area:35} 항구에 도착합니다. 퀘스트 제공자는 항구 주변 판자길과 여관에 있습니다.",
 	-- ["The boat to {area:35} docks at the end of {area:392}'s pier."] = "{area:35}행 배는 {area:392} 부두 끝에 정박합니다.",
 	-- ["The last skulls are in the ruins a short ride west, on the way back to {object:3202}."] = "마지막 해골은 {object:3202}(으)로 돌아가는 길에, 조금 서쪽의 폐허에 있습니다.",

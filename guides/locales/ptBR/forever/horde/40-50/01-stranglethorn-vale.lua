@@ -34,7 +34,13 @@ return {
 	["Gringer, the flight master, waits on {area:35}'s upper deck. The quest givers stand on the boardwalks around the harbour and in the inn."] = "Gringer, o mestre de voo, espera no convés superior de {area:35}. As pessoas que dão missões ficam nos passadiços ao redor do porto e na estalagem.",
 	-- {npc:2495} Drizzlik
 	["{npc:2495}: the Snapjaw skins gathered earlier; inside"] = "{npc:2495}: as peles de Crocolisco Arapuca que você juntou antes; lá dentro",
+	-- {npc:2495} Drizzlik · {npc:2635} Elder Saltwater Crocolisk · {object:3202} Grom'gol (no name in this language: may be words)
+	["{npc:2495}: the {npc:2635} suns on the coast between Zul'Kunda and {object:3202}, later on this loop"] = "{npc:2495}: o {npc:2635} toma sol na costa entre Zul'Kanda e {object:3202}, mais adiante neste circuito",
+	-- {npc:4631} Wharfmaster Lozgil
+	["{npc:4631}, on the docks: Gazlowe's letter, if you carry it"] = "{npc:4631}, no cais: a carta de Gazlowe, se você estiver com ela",
 	["\"Sea Wolf\" MacKinley, on the top floor"] = "MacKinley \"Lobo do Mar\", no último andar",
+	-- {npc:2496} Baron Revilgaz
+	["{npc:2496}, on the balcony beside MacKinley"] = "{npc:2496}, na sacada ao lado de MacKinley",
 	["Inside"] = "Lá dentro",
 
 	-- Step 7: Bloodsail Correspondence
@@ -58,45 +64,48 @@ return {
 	-- {zone:1435} Swamp of Sorrows
 	["for a later stop in the {zone:1435}"] = "para uma parada posterior em {zone:1435}",
 
-	-- Step 12: Witch Doctor Unbagwa
-	-- {area:35} Booty Bay · {area:1737} Mistvale Valley
-	["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "Pegue a estrada para o norte saindo de {area:35}; Unbagwa fica numa colina em {area:1737}, a leste da estrada.",
-	-- {area:1742} Spirit Den
-	["Inside {area:1742}"] = "Dentro de {area:1742}",
-
-	-- Step 13: Mistvale gorillas
+	-- Step 12: Mistvale gorillas
 	["Mistvale gorillas"] = "Gorilas do Vale da Névoa",
 	["The gorillas roam the valley around Unbagwa. The elders drop the giblets; any of them can drop a fang."] = "Os gorilas vagam pelo vale em volta de Unbagwa. Os anciões deixam cair os miúdos; qualquer um deles pode deixar cair uma presa.",
 
-	-- Step 14: Witch Doctor Unbagwa
+	-- Step 13: Witch Doctor Unbagwa
 	-- {npc:1514} Mokk the Savage
 	["Hand Unbagwa the fangs and stay by him: he calls three waves of gorillas, then {npc:1514}. Fight them one at a time."] = "Entregue as presas a Unbagwa e fique perto dele: ele chama três ondas de gorilas, depois {npc:1514}. Enfrente-os um de cada vez.",
+	-- {area:1742} Spirit Den
+	["Inside {area:1742}"] = "Dentro de {area:1742}",
 
-	-- Step 16: Venture Co. mine
+	-- Step 15: Venture Co. mine
 	["Venture Co. mine"] = "Mina da Empreendimentos S.A.",
 	-- plural, as words: Shadowmaw Panthers = {npc:684} Shadowmaw Panther
 	["Further north, the goblins of the Venture Co. dig at the mine east of the road; miners, foremen, surveyors and tinkerers all drop the crystals.\nCareful: Stealthed Shadowmaw Panthers and Stranglethorn Tigresses roam the area around the camp."] = "Mais ao norte, os goblins da Empreendimentos S.A. cavam na mina a leste da estrada; mineradores, encarregados, topógrafos e engenhoqueiros deixam cair os cristais.\nCuidado: Panteras Umbragorja furtivas e Tigresas-do-espinhaço andam em volta do acampamento.",
 
-	-- Step 18: Nesingwary's camp
+	-- Step 17: Nesingwary's camp
 	["Nesingwary's camp"] = "Acampamento de Rosarães Guima",
 	["Head north up the road; the hunters camp on the hill above the river."] = "Siga a estrada para o norte; os caçadores acampam no morro acima do rio.",
 
-	-- Step 20: Zul'Kunda
+	-- Step 19: Zul'Kunda
 	["Zul'Kunda"] = "Ruínas de Zul'Kanda",
-	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman
-	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "A oeste da expedição, os chefes Sanguescalpo {npc:1061} e {npc:1062} ficam juntos nas ruínas de Zul'Kunda. Limpe os guardas primeiro, depois puxe-os. Continue com os Sanguescalpo aqui até o nível 41: {quest:586}, no caldeirão, a seguir, manda você aos Rachacrânio de nível 41-43. Ou, em grupo, faça a masmorra {area:1517}.",
+	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman · {object:3202} Grom'gol (no name in this language: may be words) · {npc:2635} Elder Saltwater Crocolisk · {npc:2495} Drizzlik
+	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead.\nOn the coast between Zul'Kunda and {object:3202} an {npc:2635} (level 38 elite) shares the spawns of the ordinary crocolisks: kill it if it is up and take its skin for {npc:2495}."] = "A oeste da expedição, os chefes Sanguescalpo {npc:1061} e {npc:1062} ficam juntos nas ruínas de Zul'Kanda. Limpe os guardas primeiro, depois puxe-os. Continue com os Sanguescalpo aqui até o nível 41: {quest:586}, no caldeirão logo adiante, manda você aos Rachacrânio de nível 41-43. Ou, em grupo, faça a masmorra {area:1517}.\nNa costa entre Zul'Kanda e {object:3202}, um {npc:2635} (elite de nível 38) compartilha os pontos de surgimento dos crocoliscos comuns: mate-o se ele estiver lá e pegue a pele dele para {npc:2495}.",
 	-- {object:52} Fall of Gurubashi
 	["from the {object:52}, in the ruins"] = "de {object:52}, nas ruínas",
 	-- {quest:586} Speaking with Gan'zulah
 	["grind on the Bloodscalps here: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43"] = "mate os Sanguescalpos daqui até subir: {quest:586}, no caldeirão logo adiante, manda você para os Rachacrânios de nível 41-43",
 
-	-- Step 21: Grom'gol
+	-- Step 20: Grom'gol
 	-- {object:2076} Bubbling Cauldron · {npc:2497} Nimboya
 	["the {object:2076}, beside {npc:2497}"] = "o {object:2076}, ao lado de {npc:2497}",
 	-- {npc:2497} Nimboya · {zone:1425} Hinterlands
 	["{npc:2497}: for the {zone:1425}, around level 48"] = "{npc:2497}: para {zone:1425}, por volta do nível 48",
 	-- {npc:2519} Kin'weelay
 	["{npc:2519}: the trophy skulls stand in the Skullsplitter ruins, later on this loop"] = "{npc:2519}: os crânios troféu ficam nas ruínas dos Rachacrânio, mais adiante neste circuito",
+	-- {npc:2519} Kin'weelay · {area:104} Vile Reef
+	["{npc:2519}: the cavern entrance under the {area:104}, west of the camp"] = "{npc:2519}: a entrada da caverna sob {area:104}, a oeste do acampamento",
+
+	-- Step 21: The Vile Reef
+	-- {quest:95770} Locating the Lost City · {object:3202} Grom'gol (no name in this language: may be words) · {area:104} Vile Reef
+	["{quest:95770}: west of {object:3202}, swim out over the {area:104} and dive to the cavern entrance in the reef; the quest completes as you find it. Leave the cavern for now: the jungle stalkers are south along the coast."] = "{quest:95770}: a oeste de {object:3202}, nade sobre {area:104} e mergulhe até a entrada da caverna no recife; a missão é concluída quando você a encontra. Deixe a caverna para depois: os espreitadores da selva estão ao sul, ao longo da costa.",
+	["the Drowned City's entrance, underwater"] = "a entrada da Cidade Submersa, debaixo d'água",
 
 	-- Step 22: Jungle stalkers
 	["Jungle stalkers"] = "Espreitadores da selva",
@@ -120,6 +129,8 @@ return {
 	["{npc:737}, upstairs: the tusks come from the Skullsplitters, later on this loop"] = "{npc:737}, no andar de cima: as presas vêm dos Rachacrânio, mais adiante neste circuito",
 	-- {zone:1446} Tanaris
 	["MacKinley, on the top floor: for Stoley in {zone:1446}"] = "MacKinley, no último andar: para Esmirno, em {zone:1446}",
+	-- {npc:2495} Drizzlik · {item:4105} Elder Crocolisk Skin
+	["{npc:2495}, inside: the {item:4105}"] = "{npc:2495}, lá dentro: a {item:4105}",
 
 	-- Step 25: Zanzil's camps
 	["Zanzil's camps"] = "Acampamentos de Zanzil",
@@ -264,6 +275,7 @@ return {
 	-- ["Ride west along the road to the draenei camp at the {area:657}, near the way in from {zone:1430}."] = "Cavalgue para o oeste pela estrada até o acampamento draenei em {area:657}, perto da entrada vinda de {zone:1430}.",
 	-- ["Ride west to {object:3202}."] = "Cavalgue para o oeste até {object:3202}.",
 	-- ["Sawtooth snappers"] = "Tartaliscas Dentesserra",
+	-- ["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "Pegue a estrada para o norte saindo de {area:35}; Unbagwa fica numa colina em {area:1737}, a leste da estrada.",
 	-- ["The boat lands in {area:35}'s harbour. The quest givers stand on the boardwalks around the harbour and in the inn."] = "O barco chega ao porto de {area:35}. Os recrutadores de missões ficam nos passadiços em volta do porto e na estalagem.",
 	-- ["The boat to {area:35} docks at the end of {area:392}'s pier."] = "O barco para {area:35} atraca no fim do píer de {area:392}.",
 	-- ["The last skulls are in the ruins a short ride west, on the way back to {object:3202}."] = "Os últimos crânios ficam nas ruínas um pouco a oeste, no caminho de volta para {object:3202}.",
@@ -273,6 +285,7 @@ return {
 	-- ["The three ships lie off the {area:43}. The crews are 42-45, Stillwater 45, Keelhaul 46 and {npc:2546} 48: at 41 this is a fight for a group, or for the end of the guide. If you go, swim out and pull the crew to the rail one at a time. A scroll, {quest:624}, lies on the ships' decks: take it."] = "Os três navios ficam ao largo de {area:43}. As tripulações são 42-45, Tranquiláguas 45, Querena 46 e {npc:2546} 48: no nível 41, isso é luta para grupo ou para o fim do guia. Se for, nade até lá e puxe a tripulação até a amurada, um de cada vez. Um pergaminho, {quest:624}, fica no convés dos navios: pegue-o.",
 	-- ["The {area:657}"] = "{area:657}",
 	-- ["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them."] = "A oeste da expedição, os chefes Sanguescalpo {npc:1061} e {npc:1062} ficam juntos nas Ruínas de Zul'Kanda. Elimine os guardas primeiro, depois puxe os dois.",
+	-- ["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "A oeste da expedição, os chefes Sanguescalpo {npc:1061} e {npc:1062} ficam juntos nas ruínas de Zul'Kunda. Limpe os guardas primeiro, depois puxe-os. Continue com os Sanguescalpo aqui até o nível 41: {quest:586}, no caldeirão, a seguir, manda você aos Rachacrânio de nível 41-43. Ou, em grupo, faça a masmorra {area:1517}.",
 	-- ["for Stoley in {zone:1446}"] = "para Esmirno, em {zone:1446}",
 	-- ["for a later stop in the {area:8}"] = "para uma parada posterior em {area:8}",
 	-- ["for later: the {zone:1425}, around level 48"] = "para depois: {zone:1425}, por volta do nível 48",

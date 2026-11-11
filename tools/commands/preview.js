@@ -320,6 +320,8 @@ function raresScene(script) {
 	return `${clientArtLua()}${RARES_SETUP}\n${script}`;
 }
 const RARES_FILES = [...FILES, 'Rares/Rares.xml'];
+// The founder's card needs QoL's buttons for its Target button (Buttons.FounderMacro).
+const FOUNDER_FILES = [...FILES, 'QoL/QoL.xml', 'Rares/Rares.xml'];
 // The Characters scene (panel.alts): three characters of this account, the
 // one playing live and two as of their last logout (names, places and
 // numbers are samples written for the preview).
@@ -479,6 +481,8 @@ const PAD_UI = ['PolestarPadRing', 'PolestarPadHints', 'PolestarPadBadge'];
 const PAD_GUIDE = [...GUIDE, ...PAD_UI];
 const PAD_OPTIONS = [...OPTIONS, ...PAD_UI];
 const HOVER = 'PolestarGuideFrame.IsMouseOver = function() return true end; Polestar.UI.GuideFrame.HoverIn()';
+// One "While you're here" row: step 7's Kobold Workers, 60 yd away.
+const WHILE_HERE = 'local v = { step = 7, index = 1, here = "goal", yards = 60 }; for k, x in pairs(uistub.goal(7, 1)) do if v[k] == nil then v[k] = x end end; Polestar.Engine.GetWhileHereList = function() return { v } end; Polestar.UI.GuideFrame.HereChanged(); stub.advance(1)';
 const RECORDER = `stub.addonsLoaded.Polestar_Recorder = true
 PolestarRecorderDB = { enabled = true, current = "s2", sessions = {
 	s1 = { char = { name = "Testchar" }, events = {} },
@@ -872,6 +876,25 @@ Polestar.Nav.GetRouteGeometry = function() return geom end`;
 function routeStyleScene(root, style) {
 	return questScene([root], `${ROUTE_STYLES}\nPolestar.Set("nav.lineStyle", "${style}")\nPolestar.Fire("NAV_ROUTE_GEOMETRY")\nstub.advance(1.5)`, undefined, ROUTE_FILES);
 }
+// The minimap's route on light ground (the Barrens' dry grass) and dark (a
+// night forest): a flat colour under the minimap's frames, as its own picture
+// would be. style, ground { r, g, b }, extra Lua run before the draw.
+function minimapLookScene(style, ground, extra = '') {
+	return questScene(['Minimap'], `${ROUTE_STYLES}
+local ground = CreateFrame("Frame", nil, Minimap)
+ground:SetAllPoints(Minimap); ground:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 1)
+local g = ground:CreateTexture(nil, "BACKGROUND")
+g:SetAllPoints(ground); g:SetTexture("Interface\\\\AddOns\\\\Polestar\\\\Media\\\\UI\\\\circle"); g:SetVertexColor(${ground.join(', ')}, 1)
+Polestar.Set("ui.reduceMotion", true)
+Polestar.Set("nav.lineStyle", "${style}")
+${extra}
+Polestar.Fire("NAV_ROUTE_GEOMETRY")
+stub.advance(1.5)`, undefined, ROUTE_FILES);
+}
+const BARRENS = [0.71, 0.62, 0.42], NIGHT = [0.1, 0.13, 0.1];
+// A build before the sizes were per style (0.3.6's first) takes the size as
+// its one minimap size; this one keeps each style's own default.
+const styleSize = (v) => `if not Polestar.RouteLines.SIZE_KEYS then Polestar.Set("nav.minimapRouteSize", ${v}) end`;
 // Group content (the compiled `group`, the goal view's `party`): a class
 // guide whose route needs a group, its Felwood step (elites; the author's
 // "group 3" on the boss) and its Dire Maul step (two goals of one run, said
@@ -1069,11 +1092,14 @@ const SCENES = [
 	},
 	{
 		file: 'guide-transparent.svg',
-		title: 'Transparent mode over a bright world: at rest, and with the cursor over it',
+		title: 'Transparent mode over a bright world: at rest, a light shade behind each line (Soft); with the cursor over it; the bar kept shown, While you\'re here and the tip open; the Dark backing; the backing off',
 		backdrop: 'terrain',
 		panels: [
 			{ roots: GUIDE, script: `Polestar.Set("ui.style", "transparent"); ${TABS}` },
 			{ roots: GUIDE, script: `Polestar.Set("ui.style", "transparent"); ${TABS}; ${HOVER}` },
+			{ roots: GUIDE, script: `Polestar.Set("ui.style", "transparent"); Polestar.Set("ui.barShown", true); ${TABS}; ${WHILE_HERE}; Polestar.UI.GuideFrame.parts.tip:Click()` },
+			{ roots: GUIDE, script: `Polestar.Set("ui.style", "transparent"); Polestar.Set("ui.backing", "dark"); ${TABS}` },
+			{ roots: GUIDE, script: `Polestar.Set("ui.style", "transparent"); Polestar.Set("ui.backing", "none"); ${TABS}` },
 		],
 	},
 	{
@@ -1116,8 +1142,11 @@ const SCENES = [
 	},
 	{
 		file: 'whats-new.svg',
-		title: 'What\'s new, once per account on the first login after an update (/polestar whatsnew, About)',
-		panels: [{ roots: ['PolestarWhatsNew'], script: 'Polestar.UI.WhatsNew.Show()' }],
+		title: 'What\'s new, once per account on the first login after an update (/polestar whatsnew, About); its notes scrolled to the end',
+		panels: [
+			{ roots: ['PolestarWhatsNew'], script: 'Polestar.UI.WhatsNew.Show()' },
+			{ roots: ['PolestarWhatsNew'], script: 'Polestar.UI.WhatsNew.Show(); Polestar.Widgets.ScrollTo(PolestarWhatsNew.Scroll, 10000)' },
+		],
 	},
 	{
 		file: 'guide-professions.svg',
@@ -1420,6 +1449,13 @@ end`,
 		panels: [
 			{ roots: OPTIONS, script: `Polestar.Credits.supporters = { "Sample Supporter", "Another Supporter", "Third Supporter", "Fourth", "Fifth", "Sixth" }
 				Polestar.UI.ShowOptions("thanks")` },
+		],
+	},
+	{
+		file: 'line-style.svg',
+		title: 'The route line style window (the gear beside Route lines) on a short screen (768 high at a larger UI scale): its rows scroll under the header',
+		panels: [
+			{ roots: ['PolestarLineStyle'], files: WELCOME_ROUTE_FILES, script: 'UIParent:SetSize(1066, 600)\nPolestar.Set("nav.lineStyle", "sparkle")\nPolestar.UI.ShowLineStyle()' },
 		],
 	},
 	{
@@ -1726,12 +1762,28 @@ Polestar.UI.Picker.SetCategory("Leveling"); Polestar.UI.Picker.Select("forever/h
 	},
 	{
 		file: 'route-styles.svg',
-		title: 'The route line\'s looks on one route, a walk along its path then a flight: the line (the default for new players: a soft shadow, chevrons, the flight dashed in its own colour) and the dots on the world map; then the line and the dots on the minimap, clear of the player\'s arrow',
+		title: 'The route line\'s looks on one route, a walk along its path then a flight: the line (the default for new players: a soft shadow, the flight dashed in its own colour) and the dots on the world map; then the line, the dots and the sparkles on the minimap, clear of the player\'s arrow',
 		panels: [
 			routeStyleScene('WorldMapFrame', 'line'),
 			routeStyleScene('WorldMapFrame', 'dots'),
 			routeStyleScene('Minimap', 'line'),
 			routeStyleScene('Minimap', 'dots'),
+			routeStyleScene('Minimap', 'sparkle'),
+		],
+	},
+	{
+		file: 'minimap-route-look.svg',
+		title: 'The route on the minimap at each style\'s default size, light ground (the Barrens) then dark: the line at 50 %, the dots at 80 %, the sparkles at 150 %; then the dots flowing toward the goal, three moments 0.4 s apart',
+		panels: [
+			minimapLookScene('line', BARRENS, styleSize(0.5)),
+			minimapLookScene('line', NIGHT, styleSize(0.5)),
+			minimapLookScene('dots', BARRENS, styleSize(0.8)),
+			minimapLookScene('dots', NIGHT, styleSize(0.8)),
+			minimapLookScene('sparkle', BARRENS, `${styleSize(1.5)}\nPolestar.Set("ui.reduceMotion", nil)`),
+			minimapLookScene('sparkle', NIGHT, `${styleSize(1.5)}\nPolestar.Set("ui.reduceMotion", nil)`),
+			minimapLookScene('dots', BARRENS, `${styleSize(0.8)}\nPolestar.Set("ui.reduceMotion", nil)`),
+			minimapLookScene('dots', BARRENS, `${styleSize(0.8)}\nPolestar.Set("ui.reduceMotion", nil)\nstub.advance(0.4)`),
+			minimapLookScene('dots', BARRENS, `${styleSize(0.8)}\nPolestar.Set("ui.reduceMotion", nil)\nstub.advance(0.8)`),
 		],
 	},
 	{
@@ -1805,12 +1857,13 @@ local r = b.Chains[1]; r:GetScript("OnEnter")(r)`) },
 	},
 	{
 		file: 'rares-toast.svg',
-		title: 'The rare alert over the world: a rare on the minimap at its distance; a rare elite in sight; a treasure',
+		title: "The rare alert over the world: a rare on the minimap at its distance; a rare elite in sight; a treasure; the Polestar founder in sight, with his emblem and the Target button that waves",
 		backdrop: 'terrain',
 		panels: [
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('local a = Polestar.Rares.AlertOf({ source = "vignette", kind = "rare", id = 61, name = "Thuros Lightfingers", level = 11 }, { map = 1429, x = 89.2, y = 79.1 }, true); a.yards = 87; Polestar.Fire("RARE_SPOTTED", a); stub.advance(4)') },
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('Polestar.Fire("RARE_SPOTTED", Polestar.Rares.AlertOf({ source = "nameplate", kind = "rare", id = 471, name = "Mother Fang", level = 10, classification = "rareelite" }, nil, false)); stub.advance(12)') },
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('local a = Polestar.Rares.AlertOf({ source = "vignette", kind = "treasure", id = 2843, name = "Battered Chest" }, { map = 1429, x = 79.6, y = 55.7 }, true); a.yards = 412; Polestar.Fire("RARE_SPOTTED", a)') },
+			{ rares: true, files: FOUNDER_FILES, roots: TOAST, script: raresScene('Polestar.Fire("RARE_SPOTTED", { kind = "founder", name = "Fitz Polestar", source = "nameplate", inSight = true, enemy = false, button = true, zone = "Elwynn Forest" })') },
 		],
 	},
 	{

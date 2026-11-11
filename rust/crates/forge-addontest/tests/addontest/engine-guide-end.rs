@@ -204,11 +204,13 @@ fn an_end_that_no_longer_holds_is_forgotten_and_reached_again_asks_again() {
 
 // "Even with resetting": Reset guide progress (Engine.ResetProgress) forgets the end with the check-offs and
 // skips. The guide is placed again as if just opened, so with its last step done from the start nothing asks.
+// Your Place's skip stays: it is behind Far Watch Post, taken (the game's own progress), so the guide is at
+// Cutting Teeth, not back at Your Place (#1764).
 #[test]
 fn reset_guide_progress_forgets_the_end() {
 	let out = run(Run { next: NEXT, saved: None, script: &with_state("farWatchFirst(); local r = { before = state() }; E.ResetProgress(); stub.advance(3); r.after = state(); emit(r)") });
 	assert_eq!(out["before"]["ended"], true);
-	assert_eq!(json!([out["after"]["ended"], out["after"]["saved"], out["after"]["live"], out["after"]["log"]]), json!([false, false, 1, {}]));
+	assert_eq!(json!([out["after"]["ended"], out["after"]["saved"], out["after"]["live"], out["after"]["log"]]), json!([false, false, 2, {}]));
 }
 
 // guides_end_early after #1320 (0.3.6's Loch Modan, Human Warrior; Hillsbrad Foothills, Orcs): the last Lakeshire
@@ -228,7 +230,8 @@ fn an_accept_held_back_by_its_level_never_ends_the_guide_with_a_live_step_the_en
 			E.SetGuide("test/lakeshire"); flush(); takeLog()
 			w.accept(80, {}); flush()
 			w.accept(81, {}); flush()
-			local r = { at = E.GetStepIndex(), held = E.GetStepView(2).goals[2].unavailable or false }
+			local v = E.GetStepView(2).goals[2]
+			local r = { at = E.GetStepIndex(), held = v.status == "na" and not v.unavailableText and "level" or false }
 			w.moveTo(1413, 50, 50); stub.advance(1)
 			r.log, r.step = takeLog(), E.GetStepIndex() or false
 			emit(r)"#,

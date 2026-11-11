@@ -310,6 +310,23 @@ fn craft_mode(goal: &Goal) -> u8 {
 	}
 }
 
+/// Own.craftsFrom: expected crafts of a `craft … until` goal from skill k, the goal taking over at `start`.
+fn crafts_from(goal: &Goal, start: f64, k: f64) -> f64 {
+	let (Some(to), Some(y), Some(grey)) = (goal.until_skill, goal.yellow, goal.grey) else { return 0.0 };
+	if grey <= y {
+		return 0.0;
+	}
+	let (mut n, mut x) = (0.0, start.max(k));
+	while x <= to - 1.0 {
+		let p = if x < y { 1.0 } else { (grey - x) / (grey - y) };
+		if p > 0.0 {
+			n += 1.0 / p;
+		}
+		x += 1.0;
+	}
+	n
+}
+
 fn blocks(goal: &Goal) -> bool {
 	goal.t != T::Note && !goal.optional
 }
@@ -936,10 +953,83 @@ impl<'a> Sim<'a> {
 		oi > objs.len() && objs[..oi - 1].iter().all(|o| o.finished)
 	}
 
-	fn count_state(&self, goal: &Goal) -> Done {
-		let need = goal.count.unwrap_or(1.0);
+	/// countState (its need from Own.needOf).
+	fn count_state(&mut self, s: usize, g: usize) -> Done {
+		let need = self.need_of(s, g);
+		let goal = self.gd().goal(s, g);
 		let have = goal.item.map_or(0.0, |i| self.w.item_count(i));
 		Done { done: have >= need, cur: Some(if have < need { have } else { need }), max: Some(need) }
+	}
+
+	/// Own.needOf: a bag count under a section, less what the section's crafts already made would have used.
+	fn need_of(&mut self, s: usize, g: usize) -> f64 {
+		let gd = self.gd();
+		let goal = gd.goal(s, g);
+		let count = goal.count.unwrap_or(1.0);
+		if !matches!(goal.t, T::Collect | T::Buy) || goal.quest.is_some() || count <= 1.0 {
+			return count;
+		}
+		let (Some(n), Some(item)) = (gd.step(s).section, goal.item) else { return count };
+		let Some(sec) = gd.sections.get(n.wrapping_sub(1)) else { return count };
+		let Some((rank, _)) = self.skill_rank(sec.skill_line, sec.skill.as_deref()) else { return count };
+		if rank <= sec.from {
+			return count;
+		}
+		let used = self.section_demand(n, sec.from, item, false) - self.section_demand(n, rank.min(sec.to), item, false);
+		(count - (used - 0.001).ceil()).max(0.0)
+	}
+
+	/// Own.sectionDemand, for one item: what section n's crafts for the character still use of it from skill k.
+	fn section_demand(&mut self, n: usize, k: f64, item: u32, until_only: bool) -> f64 {
+		let gd = self.gd();
+		let from = gd.sections[n - 1].from;
+		let (mut start, mut d) = (from, 0.0);
+		let mut counted = Vec::new();
+		for s in 1..=gd.steps.len() {
+			if gd.step(s).section != Some(n) {
+				continue;
+			}
+			for g in 1..=gd.step(s).goals.len() {
+				let goal = gd.goal(s, g);
+				if goal.t != T::Craft || !self.step_applies(s) || !self.goal_applies(s, g) {
+					continue;
+				}
+				if let Some(until) = goal.until_skill {
+					let crafts = crafts_from(goal, start, k);
+					d += goal.reagents.iter().filter(|r| r.0 == item).map(|r| crafts * r.1).sum::<f64>();
+					start = start.max(until);
+				} else if goal.count.is_some() && goal.item.is_some() {
+					counted.push(goal);
+				}
+			}
+		}
+		if !until_only {
+			for goal in counted {
+				let made = goal.item.unwrap_or(0);
+				let full = self.section_demand(n, from, made, true);
+				let share = if full > 0.0 { (self.section_demand(n, k, made, true) / full).min(1.0) } else { 1.0 };
+				d += goal.reagents.iter().filter(|r| r.0 == item).map(|r| goal.count.unwrap_or(0.0) * r.1 * share).sum::<f64>();
+			}
+		}
+		d
+	}
+
+	/// Own.sectionPassed: step s is under a section the player's skill has passed (a profession rank one of its
+	/// goals trains and the player lacks still holds it).
+	fn section_passed(&mut self, s: usize) -> bool {
+		let gd = self.gd();
+		let Some(sec) = gd.step(s).section.and_then(|n| gd.sections.get(n.wrapping_sub(1))) else { return false };
+		match self.skill_rank(sec.skill_line, sec.skill.as_deref()) {
+			Some((rank, _)) if rank >= sec.to => {}
+			_ => return false,
+		}
+		for g in 1..=gd.step(s).goals.len() {
+			let goal = gd.goal(s, g);
+			if goal.t == T::Train && is_profession_train(goal) && self.goal_applies(s, g) && !self.goal_done(s, g).done {
+				return false;
+			}
+		}
+		true
 	}
 
 	/// Own.starterTaken.
@@ -1076,9 +1166,9 @@ impl<'a> Sim<'a> {
 				if self.starter_taken(s, g) {
 					return Done::yes();
 				}
-				self.count_state(goal)
+				self.count_state(s, g)
 			}
-			T::Buy => self.count_state(goal),
+			T::Buy => self.count_state(s, g),
 			T::Goto => {
 				if self.arrived.contains(&(self.gi(), s, g)) {
 					return Done::yes();
@@ -1164,7 +1254,7 @@ impl<'a> Sim<'a> {
 					let rank = self.skill_rank(goal.skill_line, goal.skill.as_deref()).map_or(0.0, |r| r.0);
 					Done { done: rank >= target, cur: Some(rank.min(target)), max: Some(target) }
 				}
-				1 => self.count_state(goal),
+				1 => self.count_state(s, g),
 				_ => Done::no(),
 			},
 			T::Rep => match goal.faction.and_then(|f| self.w.factions.get(&f)) {
@@ -1217,7 +1307,7 @@ impl<'a> Sim<'a> {
 
 	/// stepDone.
 	pub fn step_done(&mut self, s: usize) -> bool {
-		if self.gd().step(s).along != Along::No {
+		if self.gd().step(s).along != Along::No || self.section_passed(s) {
 			return true;
 		}
 		if self.group_pending(s) {
@@ -1272,14 +1362,27 @@ impl<'a> Sim<'a> {
 
 	// ------------------------------------------------------------------ placement and current step
 
+	/// anchorStep: the last step with quest progress, counting only goals of quests the guide offers at or
+	/// before that goal (or direct hand-ins): a quest taken in another guide says nothing of where the
+	/// player is in this one.
 	fn anchor_step(&mut self) -> usize {
-		let n = self.gd().steps.len();
+		let gd = self.gd();
+		let n = gd.steps.len();
+		let mut offered: FxHashMap<u32, usize> = FxHashMap::default();
+		for s in 1..=n {
+			for goal in &gd.step(s).goals {
+				if let (T::Accept, Some(q)) = (goal.t, goal.quest) {
+					offered.entry(q).or_insert(s);
+				}
+			}
+		}
 		for s in (1..=n).rev() {
 			let step = self.gd().step(s);
 			if step.only.is_none() {
 				for g in 1..=step.goals.len() {
 					let goal = &step.goals[g - 1];
-					if goal.only.is_none() && !goal.optional && is_quest_goal(goal) && self.goal_applies(s, g) {
+					let own = goal.direct || goal.quest.and_then(|q| offered.get(&q)).is_some_and(|&a| a <= s);
+					if own && goal.only.is_none() && !goal.optional && is_quest_goal(goal) && self.goal_applies(s, g) {
 						let d = self.goal_done(s, g);
 						if d.done || (goal.oi.is_some() && d.cur.unwrap_or(0.0) > 0.0) {
 							return s;
@@ -1356,7 +1459,7 @@ impl<'a> Sim<'a> {
 		let travel = |t: T| matches!(t, T::Goto | T::Fly | T::Hearth | T::Explore | T::Die);
 		for s in 1..limit {
 			if self.step_applies(s) && !self.is_skipped(s) && !self.step_done(s) {
-				let behind = s < anchor;
+				let behind = s < anchor && self.leads_to_done(s);
 				let mut passes = true;
 				for g in 1..=gd.step(s).goals.len() {
 					let goal = gd.goal(s, g);
@@ -1383,6 +1486,29 @@ impl<'a> Sim<'a> {
 				}
 			}
 		}
+	}
+
+	/// place's leadsToDone: a soft step behind the progress passes only when the quest work it leads to (the
+	/// next quest goal for the character after it that they can do) is done or under way.
+	fn leads_to_done(&mut self, s: usize) -> bool {
+		let gd = self.gd();
+		for t in s + 1..=gd.steps.len() {
+			// A group quest waiting for the player's answer is no work they owe the route.
+			if !self.step_applies(t) || self.is_skipped(t) || self.group_pending(t) {
+				continue;
+			}
+			for g in 1..=gd.step(t).goals.len() {
+				let goal = gd.goal(t, g);
+				if blocks(goal) && is_quest_goal(goal) && self.goal_applies(t, g) && self.gated(goal).is_none() && self.unavailable_for(t, g, 0).is_none() {
+					if self.goal_done(t, g).done {
+						return true;
+					}
+					// A hand-in of a quest in the log is still to do where its NPC stands: no sign the player went there.
+					return goal.quest.is_some_and(|q| self.quest_done(q) || (goal.t != T::Turnin && self.w.on_quest(q)));
+				}
+			}
+		}
+		true
 	}
 
 	/// Own.jump: the first `skipto` whose predicate holds skips s up to the labelled step.
@@ -1448,6 +1574,22 @@ impl<'a> Sim<'a> {
 			return None;
 		}
 		self.level_hold().filter(|&hold| hold < s)
+	}
+
+	/// Own.waitsOnLevel: the route waits at step s for its accept waiting on a level, as compute_current
+	/// decides it: s is the level hold with nothing else open on it, no open step before it, and the first
+	/// open step after it held (holds_before), or none open and the guide no leveling guide.
+	pub(crate) fn waits_on_level(&mut self, s: usize) -> bool {
+		if self.level_hold() != Some(s) || !self.step_done(s) {
+			return false;
+		}
+		let n = self.gd().steps.len();
+		for k in 1..=n {
+			if k != s && self.step_applies(k) && !self.is_skipped(k) && !self.step_done(k) {
+				return k > s && (self.every_step() || self.dungeon_step(k));
+			}
+		}
+		self.every_step()
 	}
 
 	/// Own.levelHold: the first step with an accept waiting for the character's level (unavailableFor's

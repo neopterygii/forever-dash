@@ -14,8 +14,8 @@ return {
 	["{npc:2817}'s next quest pays no experience: skip it."] = "{npc:2817}的下一個任務不給經驗值：跳過它。",
 
 	-- Step 3: Boss Tho'grun
-	-- {zone:1418} Badlands · {area:342} Camp Boff · {npc:2944} Boss Tho'grun
-	["Ride west across the {zone:1418} to the Dustbelcher camp at {area:342}. {npc:2944} stands in its middle with Wyrmhunters and Maulers around him."] = "向西騎過{zone:1418}，前往{area:342}的火煙巨魔營地。{npc:2944}站在營地中央，周圍有火煙獵龍者和火煙虐待者。",
+	-- {npc:2944} Boss Tho'grun · {area:342} Camp Boff · {zone:1418} Badlands
+	["{npc:2944} does not stay at {area:342}: he walks a long loop around the {zone:1418} with his guards, from the camp in the west along the south of the zone to about 61,69, north to about 49,49 and back west to the camp. The arrow follows his loop west from here until you meet him."] = "{npc:2944}不會待在{area:342}：他會帶著護衛在{zone:1418}繞一大圈巡邏，從西邊的營地沿著區域南部走到約61,69，再向北到約49,49，然後向西回到營地。箭頭會從這裡沿著他的路線向西指引，直到你遇到他。",
 
 	-- Step 4: Garek
 	-- {area:1898} Dustwind Gulch
@@ -87,7 +87,7 @@ return {
 	-- {npc:7884} Fraggar Thundermantle
 	["{npc:7884}, inside"] = "",
 	-- {npc:7744} Innkeeper Thulfram
-	["{npc:7744}: the last guide binds here, so this usually ticks at once; below ground"] = "",
+	["{npc:7744}; below ground"] = "{npc:7744}；在地下",
 
 	-- Step 19: Rhapsody Shindigger
 	-- {npc:5634} Rhapsody Shindigger · {area:348} Aerie Peak
@@ -99,8 +99,6 @@ return {
 	["The first two cages stand together in the Witherbark village south of {npc:5634}; the third is in the next village to the east. Every Witherbark troll can drop a necklace."] = "前兩個籠子一起放在{npc:5634}南邊的枯木村落；第三個在東邊的下一個村落。每隻枯木食人妖都可能掉落項鍊。",
 
 	-- Step 21: Aerie Peak
-	-- {npc:7884} Fraggar Thundermantle
-	["{npc:7884} keeps paying for necklaces: hand in any extras"] = "{npc:7884}會持續收購項鍊：多的都交出去",
 	-- {npc:5636} Gryphon Master Talonaxe
 	["{npc:5636}, beside the flight master at the top; inside"] = "",
 	-- {zone:1425} The Hinterlands
@@ -146,6 +144,7 @@ return {
 	-- ["Ride north-east out of {area:271} on the road into the {zone:1425}; {area:348} sits just past the border. Falstad holds court at the top, {quest:1450} tends the aviary and {npc:7884} stands by the inn."] = "沿道路從{area:271}往東北騎進{zone:1425}；{area:348}就在邊界後方。弗斯塔德·蠻錘在頂層主持，{quest:1450}照料獅鷲棲所，{npc:7884}站在旅店旁。",
 	-- ["Ride south out of {zone:1432} through the pass into the {zone:1418}; {npc:2860} camps at the dig."] = "從{zone:1432}向南騎，穿過山口進入{zone:1418}；{npc:2860}在挖掘場紮營。",
 	-- ["Ride west across the {area:3} to the Dustbelcher camp at {area:342}. {npc:2944} stands in its middle with Wyrmhunters and Maulers around him."] = "向西騎過{area:3}，前往{area:342}的火煙巨魔營地。{npc:2944}站在營地中央，周圍有火煙獵龍者和火煙虐待者。",
+	-- ["Ride west across the {zone:1418} to the Dustbelcher camp at {area:342}. {npc:2944} stands in its middle with Wyrmhunters and Maulers around him."] = "向西騎過{zone:1418}，前往{area:342}的火煙巨魔營地。{npc:2944}站在營地中央，周圍有火煙獵龍者和火煙虐待者。",
 	-- ["Ride west to the {area:1877} in the middle of the {zone:1418}; {npc:2817} camps beside Martek."] = "向西騎到{zone:1418}中部的{area:1877}；{npc:2817}在流放者馬特克旁邊紮營。",
 	-- ["Take the boat to Theramore from the far pier."] = "從最遠的碼頭搭船前往塞拉摩島。",
 	-- ["Talonaxe's next task waits for a later {area:47} guide."] = "沙拉克·鷹斧的下一個任務留到之後的{area:47}指南。",
@@ -155,4 +154,5 @@ return {
 	-- ["{npc:2888} camps by himself in {area:1898}, south-east of the digsite."] = "{npc:2888}獨自在挖掘場東南方的{area:1898}紮營。",
 	-- ["{npc:5634}'s cocktail needs parts from Kalimdor: skip it."] = "{npc:5634}的雞尾酒需要卡林多的材料：跳過它。",
 	-- ["{npc:5636}, beside the flight master at the top"] = "{npc:5636}，在頂層的飛行管理員旁邊",
+	-- ["{npc:7884} keeps paying for necklaces: hand in any extras"] = "{npc:7884}會持續收購項鍊：多的都交出去",
 }

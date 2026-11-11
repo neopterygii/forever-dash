@@ -43,7 +43,6 @@ return {
 	-- Step 7: Grazle
 	-- {npc:15395} Nafien · {zone:1448} Felwood
 	["{npc:15395} waits at the north end of {zone:1448}"] = "{npc:15395}은(는) {zone:1448} 북쪽 끝에서 기다립니다",
-	["Five feathers buy a little Timbermaw reputation"] = "깃털 5개로 나무구렁 요새 평판을 조금 얻습니다",
 
 	-- Step 8: Level 52.69
 	["Level 52.69"] = "",
@@ -83,7 +82,7 @@ return {
 	-- Step 15: Irontree Woods
 	-- {area:1767} Irontree Woods · {area:2618} Jadefire Run · {item:11503} Blood Amber
 	["The Warpwood treants of {area:1767}, east of {area:2618}, carry the {item:11503}."] = "{area:2618} 동쪽 {area:1767}의 굽이나무정령이 {item:11503}을(를) 가지고 있습니다.",
-	["Below ground"] = "",
+	["Below ground"] = "지하",
 
 	-- Step 16: Nafien
 	-- {area:1769} Timbermaw Hold · {npc:15395} Nafien
@@ -126,6 +125,7 @@ return {
 	["Ends in the {zone:1413}: keep it"] = "{zone:1413}에서 끝납니다: 보관하세요",
 
 	-- No longer in the guide (its English changed or it went away): reuse or delete.
+	-- ["Five feathers buy a little Timbermaw reputation"] = "깃털 5개로 나무구렁 요새 평판을 조금 얻습니다",
 	-- ["Fly from {area:1998} to the Sanctuary's end of the road, or ride south along it."] = "{area:1998}에서 길의 성소 쪽 끝으로 날아가거나, 길을 따라 남쪽으로 가세요.",
 	-- ["Keep her alive until she is out of the cave"] = "동굴을 나갈 때까지 그녀를 살려 두세요",
 	-- ["Oozes"] = "수액괴물",

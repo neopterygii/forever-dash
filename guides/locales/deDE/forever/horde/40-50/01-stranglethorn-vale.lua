@@ -34,7 +34,13 @@ return {
 	["Gringer, the flight master, waits on {area:35}'s upper deck. The quest givers stand on the boardwalks around the harbour and in the inn."] = "",
 	-- {npc:2495} Drizzlik
 	["{npc:2495}: the Snapjaw skins gathered earlier; inside"] = "",
+	-- {npc:2495} Drizzlik · {npc:2635} Elder Saltwater Crocolisk · {object:3202} Grom'gol (no name in this language: may be words)
+	["{npc:2495}: the {npc:2635} suns on the coast between Zul'Kunda and {object:3202}, later on this loop"] = "{npc:2495}: {npc:2635} sonnt sich an der Küste zwischen Zul'Kunda und {object:3202}, später auf dieser Runde",
+	-- {npc:4631} Wharfmaster Lozgil
+	["{npc:4631}, on the docks: Gazlowe's letter, if you carry it"] = "{npc:4631}, an den Docks: Gazlowes Brief, falls du ihn dabeihast",
 	["\"Sea Wolf\" MacKinley, on the top floor"] = "",
+	-- {npc:2496} Baron Revilgaz
+	["{npc:2496}, on the balcony beside MacKinley"] = "{npc:2496}, auf dem Balkon neben MacKinley",
 	["Inside"] = "",
 
 	-- Step 7: Bloodsail Correspondence
@@ -58,45 +64,48 @@ return {
 	-- {zone:1435} Swamp of Sorrows
 	["for a later stop in the {zone:1435}"] = "für einen späteren Halt in den {zone:1435}",
 
-	-- Step 12: Witch Doctor Unbagwa
-	-- {area:35} Booty Bay · {area:1737} Mistvale Valley
-	["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "Nimm die Straße nach Norden aus {area:35}; Unbagwa sitzt auf einem Hügel in {area:1737}, östlich der Straße.",
-	-- {area:1742} Spirit Den
-	["Inside {area:1742}"] = "",
-
-	-- Step 13: Mistvale gorillas
+	-- Step 12: Mistvale gorillas
 	["Mistvale gorillas"] = "Nebeltalgorillas",
 	["The gorillas roam the valley around Unbagwa. The elders drop the giblets; any of them can drop a fang."] = "Die Gorillas streifen durch das Tal um Unbagwa. Die Alten lassen die Innereien fallen; jeder kann einen Fangzahn fallen lassen.",
 
-	-- Step 14: Witch Doctor Unbagwa
+	-- Step 13: Witch Doctor Unbagwa
 	-- {npc:1514} Mokk the Savage
 	["Hand Unbagwa the fangs and stay by him: he calls three waves of gorillas, then {npc:1514}. Fight them one at a time."] = "Gib Unbagwa die Fangzähne und bleib bei ihm: Er ruft drei Wellen Gorillas, dann {npc:1514}. Kämpf einzeln gegen sie.",
+	-- {area:1742} Spirit Den
+	["Inside {area:1742}"] = "",
 
-	-- Step 16: Venture Co. mine
+	-- Step 15: Venture Co. mine
 	["Venture Co. mine"] = "Mine der Venture Co.",
 	-- plural, as words: Shadowmaw Panthers = {npc:684} Shadowmaw Panther
 	["Further north, the goblins of the Venture Co. dig at the mine east of the road; miners, foremen, surveyors and tinkerers all drop the crystals.\nCareful: Stealthed Shadowmaw Panthers and Stranglethorn Tigresses roam the area around the camp."] = "",
 
-	-- Step 18: Nesingwary's camp
+	-- Step 17: Nesingwary's camp
 	["Nesingwary's camp"] = "Lager von Nesingwary",
 	["Head north up the road; the hunters camp on the hill above the river."] = "",
 
-	-- Step 20: Zul'Kunda
+	-- Step 19: Zul'Kunda
 	["Zul'Kunda"] = "Ruinen von Zul'Kunda",
-	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman
-	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "",
+	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman · {object:3202} Grom'gol (no name in this language: may be words) · {npc:2635} Elder Saltwater Crocolisk · {npc:2495} Drizzlik
+	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead.\nOn the coast between Zul'Kunda and {object:3202} an {npc:2635} (level 38 elite) shares the spawns of the ordinary crocolisks: kill it if it is up and take its skin for {npc:2495}."] = "Westlich der Expedition stehen die Häuptlinge der Bloodscalp, {npc:1061} und {npc:1062}, zusammen in den Ruinen von Zul'Kunda. Räum zuerst ihre Wachen weg und zieh dann die beiden. Bleib hier bis Stufe 41 bei den Bloodscalp: {quest:586}, als Nächstes am Kessel, schickt dich zu Skullsplittern der Stufe 41-43. Oder geh stattdessen mit einer Gruppe in den Dungeon {area:1517}.\nAn der Küste zwischen Zul'Kunda und {object:3202} teilt sich ein {npc:2635} (Stufe 38, Elite) die Spawnpunkte mit den gewöhnlichen Krokilisken: Töte es, wenn es da ist, und nimm seine Haut für {npc:2495} mit.",
 	-- {object:52} Fall of Gurubashi
 	["from the {object:52}, in the ruins"] = "",
 	-- {quest:586} Speaking with Gan'zulah
 	["grind on the Bloodscalps here: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43"] = "",
 
-	-- Step 21: Grom'gol
+	-- Step 20: Grom'gol
 	-- {object:2076} Bubbling Cauldron · {npc:2497} Nimboya
 	["the {object:2076}, beside {npc:2497}"] = "{object:2076}, neben {npc:2497}",
 	-- {npc:2497} Nimboya · {zone:1425} Hinterlands
 	["{npc:2497}: for the {zone:1425}, around level 48"] = "",
 	-- {npc:2519} Kin'weelay
 	["{npc:2519}: the trophy skulls stand in the Skullsplitter ruins, later on this loop"] = "",
+	-- {npc:2519} Kin'weelay · {area:104} Vile Reef
+	["{npc:2519}: the cavern entrance under the {area:104}, west of the camp"] = "{npc:2519}: der Höhleneingang unter dem {area:104}, westlich des Lagers",
+
+	-- Step 21: The Vile Reef
+	-- {quest:95770} Locating the Lost City · {object:3202} Grom'gol (no name in this language: may be words) · {area:104} Vile Reef
+	["{quest:95770}: west of {object:3202}, swim out over the {area:104} and dive to the cavern entrance in the reef; the quest completes as you find it. Leave the cavern for now: the jungle stalkers are south along the coast."] = "{quest:95770}: Schwimm westlich von {object:3202} hinaus über das {area:104} und tauch zum Höhleneingang im Riff; die Quest wird abgeschlossen, sobald du ihn findest. Lass die Höhle vorerst links liegen: Die Dschungelpirscher sind südlich an der Küste.",
+	["the Drowned City's entrance, underwater"] = "der Eingang der versunkenen Stadt, unter Wasser",
 
 	-- Step 22: Jungle stalkers
 	["Jungle stalkers"] = "Dschungelpirscher",
@@ -120,6 +129,8 @@ return {
 	["{npc:737}, upstairs: the tusks come from the Skullsplitters, later on this loop"] = "",
 	-- {zone:1446} Tanaris
 	["MacKinley, on the top floor: for Stoley in {zone:1446}"] = "",
+	-- {npc:2495} Drizzlik · {item:4105} Elder Crocolisk Skin
+	["{npc:2495}, inside: the {item:4105}"] = "{npc:2495}, drinnen: {item:4105}",
 
 	-- Step 25: Zanzil's camps
 	["Zanzil's camps"] = "Lager von Zanzil",
@@ -137,7 +148,7 @@ return {
 	["Skullsplitter warriors"] = "Krieger der Skullsplitter",
 	-- {npc:669} Skullsplitter Hunter
 	["{npc:669} walks around here: look inside the circle on the map"] = "",
-	["Below ground"] = "",
+	["Below ground"] = "Unter der Erde",
 
 	-- Step 28: Balia'mah Ruins: kill these as you meet them
 	-- {area:127} Balia'mah Ruins
@@ -265,6 +276,7 @@ return {
 	-- ["Ride west along the road to the draenei camp at the {area:657}, near the way in from {zone:1430}."] = "Reite auf der Straße nach Westen zum Draeneilager bei {area:657}, nahe dem Weg vom {zone:1430} herein.",
 	-- ["Ride west to {object:3202}."] = "Reite nach Westen nach {object:3202}.",
 	-- ["Sawtooth snappers"] = "Sägezahnschnapper",
+	-- ["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "Nimm die Straße nach Norden aus {area:35}; Unbagwa sitzt auf einem Hügel in {area:1737}, östlich der Straße.",
 	-- ["The boat lands in {area:35}'s harbour. The quest givers stand on the boardwalks around the harbour and in the inn."] = "Das Schiff legt im Hafen von {area:35} an. Die Questgeber stehen auf den Stegen rund um den Hafen und im Gasthaus.",
 	-- ["The boat to {area:35} docks at the end of {area:392}'s pier."] = "Das Schiff nach {area:35} legt am Ende des Piers von {area:392} an.",
 	-- ["The last skulls are in the ruins a short ride west, on the way back to {object:3202}."] = "Die letzten Schädel sind in den Ruinen ein kurzes Stück westlich, auf dem Rückweg nach {object:3202}.",

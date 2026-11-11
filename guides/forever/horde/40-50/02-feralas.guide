@@ -171,10 +171,11 @@ step Fly to Freewind Post
 
 step Ratchet for the Felsteed
   only Warlock
-  zone The Barrens
+  zone Orgrimmar
   tip Fly from Orgrimmar to Ratchet; Strahad Farsan stands on the hill above the docks.
   goto 45.3,63.7 "Orgrimmar flight master"
   fly "Ratchet"
+  zone The Barrens
   turnin 3631                           -- Strahad Farsan
   accept 4490
   turnin 4490
@@ -206,8 +207,10 @@ step Mirage Raceway
   tip The road from Freewind Post to Tanaris runs past the Mirage Raceway on the Shimmering Flats: Fizzle Brassbolts is in the gnomes' camp beside the track, Pozzik and Zamek by the goblins' camp. Pozzik first, then Zamek, who runs off to keep Rizzle busy; then take Rizzle's plans from the gnomes' camp and bring them back to Pozzik.
   turnin 1137                           -- Fizzle Brassbolts: News for Fizzle, from Martek in the Badlands
   accept 1190                           -- Pozzik
-  accept 1191                           -- Zamek
-  turnin 1191
+  turnin 1183                           -- Pozzik: the Fuel Regulator Blueprints from Baron Revilgaz, if you carry them
+  accept 1186
+  turnin 1186                           -- Razzeric, beside Pozzik
+  turnin 1191 direct
   turnin 1190                           -- Rizzle's Unguarded Plans
   accept 1194
   turnin 1194                           -- Pozzik
@@ -240,7 +243,6 @@ step Gadgetzan
   turnin 1690                           -- Chief Engineer Bilgewhizzle
   accept 1691
   turnin 1707                           -- Spigot Operator Luglunket
-  accept 1878
 
 # ---------------------------------------------------------------- Steamwheedle Port
 
@@ -287,7 +289,7 @@ step Steamwheedle Port
   turnin 8366
 
 step Gadgetzan
-  turnin 1878
+  turnin 1878 direct
   turnin 2781                           -- Chief Engineer Bilgewhizzle
   turnin 1691                           -- Chief Engineer Bilgewhizzle
   vendor nearest
@@ -421,15 +423,15 @@ step Fly to Orgrimmar
 
 step Orgrimmar
   zone Orgrimmar
-  tip Fly to Orgrimmar. The Droffers brothers run their shop in the Drag.
-  accept 649                            -- Dran Droffers
-  turnin 649                            -- Malton Droffers
-  accept 650                            -- for the Hinterlands, around level 48
-  train class only Warrior,Hunter,Rogue,Priest,Shaman,Mage,Warlock
-  tip Valley of Honor, then the Cleft of Shadow and the Valley of Spirits.
+  tip Fly to Orgrimmar. From the flight master: the Cleft of Shadow, then the Drag, then the Valley of Honor.
   turnin 3121                           -- Neeru Fireblade, Cleft of Shadow
   accept 3122
-  turnin 7732                           -- Zilzibin Drumlore, Valley of Spirits
+  turnin 7732                           -- Zilzibin Drumlore, the Drag
+  accept 649                            -- Dran Droffers, the Drag
+  turnin 649                            -- Malton Droffers
+  accept 650                            -- for the Hinterlands, around level 48
+  turnin 2976                           -- Belgrom Rockmaul, Valley of Honor
+  train class only Warrior,Hunter,Rogue,Priest,Shaman,Mage,Warlock
 
 step Orgrimmar
   zone Orgrimmar

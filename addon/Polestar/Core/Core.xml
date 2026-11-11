@@ -9,9 +9,11 @@
 	<Script file="GuideTexts.lua"/>
 	<Script file="Locale.lua"/>
 	<Script file="Guides.lua"/>
+	<Script file="LegacySteps.lua"/>
 	<Script file="Levels.lua"/>
 	<Script file="Import.lua"/>
 	<Script file="Search.lua"/>
+	<Script file="FieldRoute.lua"/>
 	<Script file="Engine.lua"/>
 	<Script file="RoutePlan.lua"/>
 	<Script file="ClassTrainers.lua"/>
@@ -19,4 +21,5 @@
 	<Script file="Unlocks.lua"/>
 	<Script file="Automation.lua"/>
 	<Script file="Commands.lua"/>
+	<Script file="Update.lua"/>
 </Ui>

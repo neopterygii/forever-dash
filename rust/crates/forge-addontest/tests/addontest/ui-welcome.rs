@@ -518,6 +518,80 @@ fn the_route_page_three_styles_with_what_each_does_balanced_picked_on_a_fresh_ac
 }
 
 #[test]
+fn the_route_page_map_is_the_websites_demo_each_style_its_own_walk_a_switch_leaves_a_ghost_and_replays_the_trail() {
+	let out = run(r#"
+		-- Whatever the character's zone: the site's one example.
+		uistub.guides[uistub.suggest].zone = 1412
+		Wel.Show("route")
+		local m = PolestarWelcome.RouteMap
+		-- A set's shown lines' ends, in px on the map.
+		local function drawn(set)
+			local pts = {}
+			for i, l in ipairs(set) do
+				if l:IsShown() then
+					if i == 1 then pts[#pts + 1] = ("%.1f,%.1f"):format(l.startPoint[3], l.startPoint[4]) end
+					pts[#pts + 1] = ("%.1f,%.1f"):format(l.endPoint[3], l.endPoint[4])
+				end
+			end
+			return pts
+		end
+		local function shown(set)
+			local n = 0
+			for _, l in ipairs(set) do if l:IsShown() then n = n + 1 end end
+			return n
+		end
+		local first = { place = plain(m.Place:GetText()), trail = drawn(m.TrailCore),
+			ghost = shown(m.GhostLines), road = shown(m.RoadLines), note = plain(m.Note:GetText()) }
+		local seen = {}
+		for _, s in ipairs({ "fastest", "roads", "balanced" }) do
+			local before = Polestar.Get("nav.routeStyle") or "balanced"
+			PolestarWelcome.Styles[s == "fastest" and 1 or s == "balanced" and 2 or 3]:Click()
+			local just = { running = Polestar.Anim.IsRunning(m, "value"), share = m.psShare, ghost = m.psGhost,
+				ghostLines = shown(m.GhostLines), roadAlpha = m.Road:GetAlpha() }
+			stub.advance(0.2)
+			local mid = { share = m.psShare, trail = shown(m.TrailCore) }
+			stub.advance(2)
+			seen[s] = { before = before, just = just, mid = mid, trail = drawn(m.TrailCore), after = m.psShare,
+				ghostAlpha = m.Ghost:GetAlpha(), note = plain(m.Note:GetText()) }
+		end
+		Polestar.Set("ui.reduceMotion", true)
+		Polestar.Set("nav.routeStyle", "roads")
+		local reduced = { running = Polestar.Anim.IsRunning(m, "value"), share = m.psShare, trail = drawn(m.TrailCore),
+			ghost = m.psGhost, ghostAlpha = m.Ghost:GetAlpha(), roadAlpha = m.Road:GetAlpha() }
+		emit({ first = first, seen = seen, reduced = reduced })"#);
+	assert_eq!(out["first"]["place"], "Elwynn Forest", "the site's zone, whatever the character's");
+	assert_eq!(out["first"]["note"], "Go to Westfall \u{b7} 1519 yd", "where the walk goes, and Balanced's yards");
+	assert_eq!(out["first"]["trail"], out["seen"]["balanced"]["trail"], "a fresh account sees Balanced's walk");
+	assert_eq!(out["first"]["ghost"], 0, "no ghost before a switch");
+	assert!(out["first"]["road"].as_u64().unwrap() > 0, "the dotted road under the trail");
+	let trails: Vec<&Value> = ["fastest", "balanced", "roads"].iter().map(|s| &out["seen"][s]["trail"]).collect();
+	assert_eq!(trails.iter().map(|p| p.to_string()).collect::<HashSet<_>>().len(), 3, "each style its own walk");
+	for (s, p) in ["fastest", "balanced", "roads"].iter().zip(&trails) {
+		let pts = p.as_array().unwrap();
+		assert_eq!(pts[0], trails[0][0], "{s}: every style starts at the same place");
+		assert_eq!(&pts[pts.len() - 1], trails[0].as_array().unwrap().last().unwrap(), "{s}: and ends at the same place");
+		let o = &out["seen"][s];
+		assert_eq!(o["just"]["running"], true, "{s}: a switch replays the trail");
+		assert_eq!(o["just"]["share"], 0.0, "{s}: from the start");
+		assert_eq!(o["just"]["ghost"], o["before"], "{s}: the last style's walk is the ghost");
+		assert!(o["just"]["ghostLines"].as_u64().unwrap() > 0, "{s}: drawn dashed");
+		assert_eq!(o["just"]["roadAlpha"], 0.0, "{s}: the new road fades in");
+		let mid = o["mid"]["share"].as_f64().unwrap();
+		assert!(mid > 0.0 && mid < 1.0, "{s}: part of the trail on the way: {o}");
+		assert_eq!(o["after"], 1.0, "{s}: whole once replayed");
+		assert_eq!(o["ghostAlpha"], 0.55, "{s}: the ghost settles faint");
+	}
+	let notes: HashSet<String> = ["fastest", "balanced", "roads"].iter().map(|s| out["seen"][s]["note"].to_string()).collect();
+	assert_eq!(notes.len(), 3, "the note gives each style's own yards: {notes:?}");
+	assert_eq!(out["reduced"]["running"], false, "under reduced motion no replay");
+	assert_eq!(out["reduced"]["share"], 1.0, "the trail is whole at once");
+	assert_eq!(out["reduced"]["trail"], out["seen"]["roads"]["trail"], "and it is Roads' walk");
+	assert_eq!(out["reduced"]["ghost"], "balanced", "the last style left as the ghost");
+	assert_eq!(out["reduced"]["ghostAlpha"], 0.55, "at once faint");
+	assert_eq!(out["reduced"]["roadAlpha"], 1.0, "the road at once");
+}
+
+#[test]
 fn the_start_page_start_guide_opens_the_suggested_guide_browse_guides_opens_the_picker_both_close_it() {
 	let out = run(r#"
 		Wel.Show("start")

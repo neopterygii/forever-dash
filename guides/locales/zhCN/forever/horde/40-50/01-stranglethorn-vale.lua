@@ -34,7 +34,13 @@ return {
 	["Gringer, the flight master, waits on {area:35}'s upper deck. The quest givers stand on the boardwalks around the harbour and in the inn."] = "飞行管理员格林戈在{area:35}的上层平台等候。任务给予者分布在海港周围的栈道和旅店里。",
 	-- {npc:2495} Drizzlik
 	["{npc:2495}: the Snapjaw skins gathered earlier; inside"] = "{npc:2495}：交还之前收集的钳嘴龟皮；他在屋内",
+	-- {npc:2495} Drizzlik · {npc:2635} Elder Saltwater Crocolisk · {object:3202} Grom'gol
+	["{npc:2495}: the {npc:2635} suns on the coast between Zul'Kunda and {object:3202}, later on this loop"] = "{npc:2495}：{npc:2635}在祖昆达废墟和{object:3202}之间的海岸上晒太阳，本轮路线稍后会经过",
+	-- {npc:4631} Wharfmaster Lozgil
+	["{npc:4631}, on the docks: Gazlowe's letter, if you carry it"] = "码头上的{npc:4631}：如果你带着加兹鲁维的信，交给他",
 	["\"Sea Wolf\" MacKinley, on the top floor"] = "“海狼”马克基雷，位于最顶层",
+	-- {npc:2496} Baron Revilgaz
+	["{npc:2496}, on the balcony beside MacKinley"] = "{npc:2496}，在马克基雷旁边的阳台上",
 	["Inside"] = "在里面",
 
 	-- Step 7: Bloodsail Correspondence
@@ -58,45 +64,48 @@ return {
 	-- {zone:1435} Swamp of Sorrows
 	["for a later stop in the {zone:1435}"] = "留到之后在{zone:1435}停留时",
 
-	-- Step 12: Witch Doctor Unbagwa
-	-- {area:35} Booty Bay · {area:1737} Mistvale Valley
-	["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "沿道路向北离开{area:35}；安巴格瓦坐在道路东边{area:1737}的一座山丘上。",
-	-- {area:1742} Spirit Den
-	["Inside {area:1742}"] = "在{area:1742}内部",
-
-	-- Step 13: Mistvale gorillas
+	-- Step 12: Mistvale gorillas
 	["Mistvale gorillas"] = "迷雾谷猩猩",
 	["The gorillas roam the valley around Unbagwa. The elders drop the giblets; any of them can drop a fang."] = "猩猩在安巴格瓦周围的山谷里游荡。老迈的猩猩掉落内脏；任何猩猩都可能掉落猩猩牙。",
 
-	-- Step 14: Witch Doctor Unbagwa
+	-- Step 13: Witch Doctor Unbagwa
 	-- {npc:1514} Mokk the Savage
 	["Hand Unbagwa the fangs and stay by him: he calls three waves of gorillas, then {npc:1514}. Fight them one at a time."] = "把猩猩牙交给安巴格瓦并待在他身边：他会召唤三波猩猩，然后是{npc:1514}。一次对付一个。",
+	-- {area:1742} Spirit Den
+	["Inside {area:1742}"] = "在{area:1742}内部",
 
-	-- Step 16: Venture Co. mine
+	-- Step 15: Venture Co. mine
 	["Venture Co. mine"] = "风险投资公司矿洞",
 	-- plural, as words: Shadowmaw Panthers = {npc:684} Shadowmaw Panther
 	["Further north, the goblins of the Venture Co. dig at the mine east of the road; miners, foremen, surveyors and tinkerers all drop the crystals.\nCareful: Stealthed Shadowmaw Panthers and Stranglethorn Tigresses roam the area around the camp."] = "再往北，风险投资公司的地精在道路东侧矿场挖掘；矿工、工头、勘探员和工匠都会掉落水晶。\n小心：营地周围有潜行的深喉猎豹和荆棘谷雌虎游荡。",
 
-	-- Step 18: Nesingwary's camp
+	-- Step 17: Nesingwary's camp
 	["Nesingwary's camp"] = "奈辛瓦里的营地",
 	["Head north up the road; the hunters camp on the hill above the river."] = "沿路向北；猎人们在河流上方的山丘扎营。",
 
-	-- Step 20: Zul'Kunda
+	-- Step 19: Zul'Kunda
 	["Zul'Kunda"] = "祖昆达废墟",
-	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman
-	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "远征队西边，血顶酋长{npc:1061}和{npc:1062}一起待在祖昆达废墟。先清掉卫兵，再引他们。在这里继续击杀血顶巨魔直到41级：下一站大锅处的{quest:586}会让你去对付41-43级的劈颅巨魔。也可组队挑战{area:1517}副本。",
+	-- {npc:1061} Gan'zulah · {npc:1062} Nezzliok the Dire · {quest:586} Speaking with Gan'zulah · {area:1517} Uldaman · {object:3202} Grom'gol · {npc:2635} Elder Saltwater Crocolisk · {npc:2495} Drizzlik
+	["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead.\nOn the coast between Zul'Kunda and {object:3202} an {npc:2635} (level 38 elite) shares the spawns of the ordinary crocolisks: kill it if it is up and take its skin for {npc:2495}."] = "远征队西边，血顶酋长{npc:1061}和{npc:1062}一起待在祖昆达废墟。先清掉卫兵，再引他们。在这里继续击杀血顶巨魔直到41级：下一站大锅处的{quest:586}会让你去对付41-43级的劈颅巨魔。也可组队挑战{area:1517}副本。\n在祖昆达废墟和{object:3202}之间的海岸上，{npc:2635}（38级精英）与普通鳄鱼共享刷新点：如果它在，就击杀它并拿走它的皮交给{npc:2495}。",
 	-- {object:52} Fall of Gurubashi
 	["from the {object:52}, in the ruins"] = "",
 	-- {quest:586} Speaking with Gan'zulah
 	["grind on the Bloodscalps here: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43"] = "在这里刷血顶巨魔升级：下一站大锅处的{quest:586}会让你去对付41-43级的劈颅巨魔",
 
-	-- Step 21: Grom'gol
+	-- Step 20: Grom'gol
 	-- {object:2076} Bubbling Cauldron · {npc:2497} Nimboya
 	["the {object:2076}, beside {npc:2497}"] = "{object:2076}，在{npc:2497}旁边",
 	-- {npc:2497} Nimboya · {zone:1425} Hinterlands
 	["{npc:2497}: for the {zone:1425}, around level 48"] = "{npc:2497}：留到约48级去{zone:1425}时完成",
 	-- {npc:2519} Kin'weelay
 	["{npc:2519}: the trophy skulls stand in the Skullsplitter ruins, later on this loop"] = "",
+	-- {npc:2519} Kin'weelay · {area:104} Vile Reef
+	["{npc:2519}: the cavern entrance under the {area:104}, west of the camp"] = "{npc:2519}：洞穴入口在营地西边的{area:104}下方",
+
+	-- Step 21: The Vile Reef
+	-- {quest:95770} Locating the Lost City · {object:3202} Grom'gol · {area:104} Vile Reef
+	["{quest:95770}: west of {object:3202}, swim out over the {area:104} and dive to the cavern entrance in the reef; the quest completes as you find it. Leave the cavern for now: the jungle stalkers are south along the coast."] = "{quest:95770}：在{object:3202}西边，游到{area:104}上方，潜入礁石中的洞穴入口；找到入口时任务即完成。暂时不要进入洞穴：丛林捕猎者在沿海岸往南的地方。",
+	["the Drowned City's entrance, underwater"] = "沉没之城的入口，位于水下",
 
 	-- Step 22: Jungle stalkers
 	["Jungle stalkers"] = "丛林捕猎者",
@@ -120,6 +129,8 @@ return {
 	["{npc:737}, upstairs: the tusks come from the Skullsplitters, later on this loop"] = "",
 	-- {zone:1446} Tanaris
 	["MacKinley, on the top floor: for Stoley in {zone:1446}"] = "顶层的“海狼”马克基雷：交给{zone:1446}的斯杜雷",
+	-- {npc:2495} Drizzlik · {item:4105} Elder Crocolisk Skin
+	["{npc:2495}, inside: the {item:4105}"] = "{npc:2495}，在屋内：交还{item:4105}",
 
 	-- Step 25: Zanzil's camps
 	["Zanzil's camps"] = "赞吉尔的营地",
@@ -265,6 +276,7 @@ return {
 	-- ["Ride west along the road to the draenei camp at the {area:657}, near the way in from {zone:1430}."] = "沿道路向西骑往{area:657}的德莱尼营地，靠近{zone:1430}的入口。",
 	-- ["Ride west to {object:3202}."] = "向西骑往{object:3202}。",
 	-- ["Sawtooth snappers"] = "盐齿钳嘴鳄",
+	-- ["Take the road north out of {area:35}; Unbagwa sits on a hill in {area:1737}, east of the road."] = "沿道路向北离开{area:35}；安巴格瓦坐在道路东边{area:1737}的一座山丘上。",
 	-- ["The boat lands in {area:35}'s harbour. The quest givers stand on the boardwalks around the harbour and in the inn."] = "船停靠在{area:35}的港口。任务给予者站在港口周围的木栈道上和旅店里。",
 	-- ["The boat to {area:35} docks at the end of {area:392}'s pier."] = "前往{area:35}的船停靠在{area:392}码头的尽头。",
 	-- ["The last skulls are in the ruins a short ride west, on the way back to {object:3202}."] = "最后的颅骨堆在西边不远的废墟里，就在回{object:3202}的路上。",
@@ -274,6 +286,7 @@ return {
 	-- ["The three ships lie off the {area:43}. The crews are 42-45, Stillwater 45, Keelhaul 46 and {npc:2546} 48: at 41 this is a fight for a group, or for the end of the guide. If you go, swim out and pull the crew to the rail one at a time. A scroll, {quest:624}, lies on the ships' decks: take it."] = "三艘船停在{area:43}外的海面上。船员是42-45级，斯蒂沃特船长45级，尼哈鲁船长46级，{npc:2546}48级：41级时这是小队的战斗，或者留到本指南结束时再来。如果要去，就游过去，把船员一个个引到船舷边。船的甲板上有一张卷轴{quest:624}：拿上它。",
 	-- ["The {area:657}"] = "{area:657}",
 	-- ["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them."] = "在远征队营地西边，血顶酋长{npc:1061}和{npc:1062}一起站在祖昆达废墟里。先清掉他们的守卫，再引他们。",
+	-- ["West of the expedition, the Bloodscalp chiefs {npc:1061} and {npc:1062} stand together in the ruins of Zul'Kunda. Clear their guards first, then pull them. Stay on the Bloodscalps here until level 41: {quest:586}, at the cauldron next, sends you to Skullsplitters of 41-43. Or, with a group, run the {area:1517} dungeon instead."] = "远征队西边，血顶酋长{npc:1061}和{npc:1062}一起待在祖昆达废墟。先清掉卫兵，再引他们。在这里继续击杀血顶巨魔直到41级：下一站大锅处的{quest:586}会让你去对付41-43级的劈颅巨魔。也可组队挑战{area:1517}副本。",
 	-- ["for Stoley in {zone:1446}"] = "交给{zone:1446}的斯杜雷",
 	-- ["for a later stop in the {area:8}"] = "留到之后在{area:8}停留时",
 	-- ["for later: the {zone:1425}, around level 48"] = "留到之后：{zone:1425}，大约48级时",

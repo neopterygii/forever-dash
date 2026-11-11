@@ -50,8 +50,14 @@ parts, and its texts in the language folders `Polestar_<locale>`), then writes t
 
 It stops before writing anything when the Codex is not built (`forge data codex`), was built with local
 extras, names a local-only source, or names ForeverLevelingBiS (a Codex built before it left, 2026-11);
-when an addon's TOC is missing; when the guides have errors; or
+when an addon's TOC is missing; when the guides have errors; when a leveling guide changed since its
+legs were baked (`guides/legs.json`: it would ship without legs; each such guide is named); or
 without reference data (`forge data build`). A TOC whose version is not `package.json`'s is a warning.
+
+`--bake` bakes those guides instead of stopping: only their legs are routed, on the maps
+`legs.json` names (`--grid` and `--leffe` must give those maps; a bake on other maps writes nothing),
+put into `legs.json` in place (every other guide's legs and the file's order untouched), its hash
+updated in `guides/GENERATED.json`, and the guides built again before packing.
 
 The zips are reproducible on every machine: entries in a fixed order (each folder, then its files by
 name; hidden files left out), one fixed timestamp (2026-01-01 00:00), and deflate at level 9 through
@@ -96,7 +102,9 @@ fetched with the GitHub CLI (`gh`, logged in):
 - contributors by merged or folded pull requests, most first. A closed pull request counts as folded when
   one of its commits is on the checkout's HEAD with its authorship kept: the same author email, and a
   subject that starts with the pull request commit's headline (a contributor's work cherry-picked into a
-  maintainer's branch, as the 0.3.6 hotfix did);
+  maintainer's branch, as the 0.3.6 hotfix did). An open pull request counts as folded when its head
+  commit is on HEAD: an integration branch merged it, and the release's push to `next` will mark it
+  merged;
 - the top 40 bug reporters by useful reports, most first, ties to whoever reported first. The reporter
   is the Discord name in the bot's first line ("**Reported by <name> on [Discord](...)**", unescaped
   and folded to NFKC so styled letters show in the game's fonts), else the GitHub login that opened

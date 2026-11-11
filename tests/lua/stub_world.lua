@@ -431,6 +431,9 @@ local function logIDs()
 	table.sort(ids)
 	return ids
 end
+-- Forever's client answers 0 here (its log holds 40: Compat.GetLogCap); the
+-- stub answers the same, so code that reads it raw fails in tests too.
+function C_QuestLog.GetMaxNumQuestsCanAccept() return 0 end
 function C_QuestLog.GetNumQuestLogEntries()
 	local n = #logIDs()
 	return n, n
@@ -622,7 +625,7 @@ function C_GossipInfo.GetOptions()
 	local f = frameOf("gossip")
 	local out = {}
 	for i, o in ipairs(f and f.options or {}) do
-		out[i] = { name = o.name or ("Option " .. i), gossipOptionID = o.gossipOptionID or i, icon = 0, flags = 0, status = 0 }
+		out[i] = { name = o.name or ("Option " .. i), gossipOptionID = o.gossipOptionID or i, icon = o.icon or 0, overrideIconID = o.overrideIconID, flags = 0, status = 0 }
 	end
 	return out
 end

@@ -35,7 +35,7 @@ return {
 	["{area:1938}: kill these as you meet them"] = "",
 	-- {area:982} Noxious Lair · {npc:12046} Gor'marok the Ravager · {quest:3161} Gahz'ridian
 	["South of the {area:982} the Dunemaul ogres hold their compound, with {npc:12046} at its eastern end. Dig up {quest:3161} ornaments between the fights."] = "К югу от места {area:982} огры клана Песчаного Молота занимают свой лагерь, {npc:12046} – в его восточной части. Между боями выкапывайте украшения ({quest:3161}).",
-	["Below ground"] = "",
+	["Below ground"] = "Под землей",
 
 	-- Step 9: Noxious Lair
 	-- {npc:4196} Silithid Swarm
@@ -61,7 +61,8 @@ return {
 	["Careful: Shadow Mages (level 42-43) call a Voidwalker while out of combat and attack with Immolate and {spell:686}. Thieves can Disarm you, Rogues move around in Sneak, and Assassins use Execute once you are at 20% health or less."] = "",
 
 	-- Step 14: Gadgetzan
-	["Use the Model 4711-FTZ Power Source Bilgewhizzle gave you: a two-hour timer starts"] = "",
+	-- {quest:654} Tanaris Field Sampling
+	["Keep the Model 4711-FTZ Power Source Bilgewhizzle gave you: it starts {quest:654}, a two-hour timer, so use it on the way back north from Scrimshank's hive."] = "Сохраните источник энергии модели 4711-FTZ, который дал вам Трюмогуд: он начинает задание {quest:654} с двухчасовым таймером, так что используйте его на обратном пути на север от улья Холстомера.",
 
 	-- Step 15: Gadgetzan
 	-- {item:8526} Violet Tragan · {zone:1425} Hinterlands
@@ -69,19 +70,21 @@ return {
 	-- {npc:5594} Alchemist Pestlezugg
 	["{npc:5594}, inside"] = "",
 
-	-- Step 16: Tanaris Field Sampling
-	-- {area:976} Gadgetzan
-	-- plural, as words: Blisterpaw Hyenas = {npc:5426} Blisterpaw Hyena · Glasshide Basilisks = {npc:5419} Glasshide Basilisk · Scorpid Hunters = {npc:5422} Scorpid Hunter
-	["Just south of {area:976} the Blisterpaw Hyenas, Glasshide Basilisks and Scorpid Hunters share the dunes. Each can drop an untested sample: use it, and it either passes as an acceptable one or is lost. Keep killing until you have eight of each."] = "",
-
-	-- Step 18: Scrimshank's gear
+	-- Step 17: Scrimshank's gear
 	["Scrimshank's gear"] = "Устройство Холстомера",
 	["Further south, Junior Surveyor Scrimshank's gear lies at the mouth of a Centipaar hive.\nCareful: One bug guards the gear. Many bugs patrol the tunnels, some of them level 50, so fights often pull extra adds."] = "",
 
-	-- Step 19: OOX-17/TN
+	-- Step 18: OOX-17/TN
 	["OOX-17/TN"] = "КПХ-17/TN",
 	-- {area:977} Steamwheedle Port · {area:35} Booty Bay
 	["Only with the distress beacon: OOX-17/TN sits south-east of Scrimshank's hive. Escort it north to {area:977}; its reward waits with Oglethorpe in {area:35}.\nCareful: The escort has two ambushes. Three level 47 scorpids attack near the start. Near the end, by the beach, three Wastewander humans attack: one mage and two assassins, around level 44."] = "",
+
+	-- Step 19: Tanaris Field Sampling
+	-- {area:976} Gadgetzan · {item:8524} Model 4711-FTZ Power Source
+	-- plural, as words: Blisterpaw Hyenas = {npc:5426} Blisterpaw Hyena · Glasshide Basilisks = {npc:5419} Glasshide Basilisk · Scorpid Hunters = {npc:5422} Scorpid Hunter
+	["Back north, just south of {area:976}, use the {item:8524} now: the two-hour timer starts. The Blisterpaw Hyenas, Glasshide Basilisks and Scorpid Hunters share the dunes here. Each can drop an untested sample: use it, and it either passes as an acceptable one or is lost. Keep killing until you have eight of each."] = "Вернувшись на север, чуть южнее места {area:976}, используйте предмет {item:8524}: запустится двухчасовой таймер. Гиены Ядовитой Лапы, стеклошкурые василиски и скорпиды-охотники обитают здесь в дюнах. С каждого может упасть непроверенный образец: используйте его – он либо окажется пригодным, либо пропадет. Убивайте, пока не соберете по восемь образцов каждого вида.",
+	-- {item:8524} Model 4711-FTZ Power Source
+	["Use the {item:8524}"] = "Используйте предмет {item:8524}",
 
 	-- Step 20: Gadgetzan
 	-- {npc:5204} Apothecary Zinge · {zone:1458} Undercity
@@ -183,6 +186,7 @@ return {
 	-- ["The Greater Lava Spiders roam the plateaus and lava pools in the south-west of the gorge."] = "Опаляющие лавовые пауки бродят по плато и лавовым озерам на юго-западе ущелья.",
 	-- ["The Steamsmiths' furnaces"] = "Горны кузнецов",
 	-- ["The boat to {area:35} docks at {area:392}'s pier, below the flight master's hill."] = "Корабль ({area:35}) причаливает к пирсу ({area:392}) под холмом распорядителя полетов.",
+	-- ["The {object:142071} machine, in the middle of town: the egg is in southern {zone:1444}, around level 50"] = "Устройство {object:142071} в центре города: яйцо находится на юге края {zone:1444}, примерно на 50-м уровне",
 	-- ["West of the compound the cactus creatures fill the valley; only the Dew Collectors carry a dew gland. Most mobs in {zone:1446} can drop OOX-17/TN's distress beacon, rarely: keep it if you see one."] = "К западу от лагеря долину заполняют кактусовые существа; росяная железа – только у собирателей росы. С большинства монстров ({zone:1446}) изредка падает аварийный маяк КПХ-17/TN: сохраните его, если выпадет.",
 	-- ["West, the Centipaar insects swarm around their hives; any of them drops the parts."] = "К западу насекомые-сентипаары роятся у своих ульев; части тел падают с любого.",
 	-- ["the {object:150075} in the square"] = "{object:150075} на площади",

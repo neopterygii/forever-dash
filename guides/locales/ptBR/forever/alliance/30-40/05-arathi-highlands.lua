@@ -28,8 +28,10 @@ return {
 	["Follow the road north to the draenei of the {area:657}."] = "Siga a estrada para o norte até os draeneis do {area:657}.",
 
 	-- Step 7: Fallow Sanctuary
-	-- {area:76} Fallow Sanctuary · {npc:256028} The Lost One
-	["East along the road to the {area:76}. {npc:256028} mobs drop the crystals; Noboru walks the ruins and drops his cudgel."] = "Para leste pela estrada até o {area:76}. Os {npc:256028} deixam cair os cristais; Noboru anda pelas ruínas e deixa cair sua borduna.",
+	-- {area:76} Fallow Sanctuary · {npc:256028} The Lost One · {quest:1392} Noboru the Cudgel · {npc:1776} Magtoor
+	["East along the road to the {area:76}. {npc:256028} mobs drop the crystals. {quest:1392} walks a long path through the ruins: if you meet him, kill him, his cudgel starts a quest for {npc:1776}. Don't wait for him."] = "Para leste pela estrada até o {area:76}. Os {npc:256028} deixam cair os cristais. {quest:1392} percorre um longo caminho pelas ruínas: se você o encontrar, mate-o; a borduna dele inicia uma missão para {npc:1776}. Não espere por ele.",
+	-- {quest:1392} Noboru the Cudgel
+	["from {quest:1392}: he walks a path through the ruins"] = "de {quest:1392}: ele percorre um caminho pelas ruínas",
 
 	-- Step 8: The Lost Caravan
 	-- {area:76} Fallow Sanctuary · {npc:5391} Galen Goodward
@@ -91,8 +93,10 @@ return {
 	["{zone:1455} flight master"] = "Mestre de voo de {zone:1455}",
 
 	-- Step 22: Shadowy Assassin
-	-- {npc:2434} Shadowy Assassin · {area:271} Southshore
-	["A {npc:2434} lurks unseen on the edge of {area:271}; kill him and read the contract he carries."] = "Um {npc:2434} espreita invisível na borda de {area:271}; mate-o e leia o contrato que ele carrega.",
+	-- {npc:2434} Shadowy Assassin · {area:271} Southshore · {npc:2276} Magistrate Henry Maleb
+	["A {npc:2434} lurks stealthed on the edge of {area:271}, and few players find him. If you spot him, kill him and read the contract he carries: {npc:2276} takes it. Don't wait for him: the rest of this step doesn't need him."] = "Um {npc:2434} espreita furtivo na borda de {area:271}, e poucos jogadores o encontram. Se você o avistar, mate-o e leia o contrato que ele carrega: {npc:2276} o aceita. Não espere por ele: o resto desta etapa não precisa dele.",
+	-- {npc:2434} Shadowy Assassin
+	["{npc:2434}, if you spot him"] = "{npc:2434}, se você o avistar",
 	-- {npc:2276} Magistrate Henry Maleb
 	["{npc:2276}, inside"] = "{npc:2276}, lá dentro",
 
@@ -111,42 +115,43 @@ return {
 	-- plural, as words: Hay Weevils = {npc:217589} Hay Weevil
 	["Hay Weevils crawl about the north end of {quest:681}'s farm: catch one with the tool from {npc:217412}'s Entomology Starter Kit."] = "Gorgulhos do Feno rastejam pela ponta norte da fazenda de {quest:681}: pegue um com a ferramenta do kit de entomologia de {npc:217412}.",
 
-	-- Step 28: Witherbark Village
-	-- {area:314} Go'Shek Farm
-	["A few Witherbark trolls camp south of Northfold, on the way; the main village lies in the hills south of {area:314} in the south-east, where the Witch Doctors stand and the Shadow Hunters guard the far end of the valley. Every troll can drop a tusk."] = "Alguns trolls Cascasseca acampam ao sul de Northfold, no caminho; a aldeia principal fica nas colinas ao sul de {area:314}, no sudeste, onde ficam os Mandingueiros e os Caçadores Sombrios guardam a outra ponta do vale. Todo troll pode soltar uma presa.",
-	-- {item:5040} Shadow Hunter Knife
-	["{item:5040}; below ground"] = "{item:5040}; no subterrâneo",
-
-	-- Step 29: Shards of Myzrael
-	-- {area:314} Go'Shek Farm · {area:333} Circle of East Binding
-	["Head north past {area:314}; the shards glitter on the hill by the {area:333}."] = "Siga para o norte, passando a {area:314}; os estilhaços brilham na colina junto ao {area:333}.",
+	-- Step 28: Shards of Myzrael
+	-- {quest:681} Northfold Manor · {area:333} Circle of East Binding · {area:314} Go'Shek Farm
+	["East from {quest:681} across the north of the Highlands; the shards glitter on the hill by the {area:333}, north of {area:314}."] = "Para leste a partir de {quest:681}, atravessando o norte do Planalto; os estilhaços brilham na colina junto ao {area:333}, ao norte de {area:314}.",
 	["Only if Gluggle gave you the pendant in Stranglethorn"] = "Só se Glubglub lhe deu o pingente no Espinhaço",
 
-	-- Step 30: Drywhisker Gorge: kill these as you meet them
+	-- Step 29: Drywhisker Gorge: kill these as you meet them
 	-- {area:318} Drywhisker Gorge
 	["{area:318}: kill these as you meet them"] = "{area:318}: vá matando estes pelo caminho",
-	-- {area:321} Hammerfall
-	["The Drywhisker kobolds dig in the gorge east of {area:321} (Horde); skirt the town to the north. They drop both the motes and Krazek's ore.\nCareful: Every kobold type runs off for help when low on health (Kobolds at 30%, Surveyors and Diggers at 15%), which can pull more of them."] = "Os kobolds Bigodesseco cavam no desfiladeiro a leste de {area:321} (Horda); contorne a cidade pelo norte. Eles deixam cair tanto as partículas quanto o minério do Krazek.\nCuidado: todo tipo de kobold sai correndo atrás de ajuda com pouca vida (Kobolds com 30%, Topógrafos e Escavadores com 15%), o que pode trazer mais deles.",
+	-- {area:321} Hammerfall · {skill:186} Mining
+	-- plural, as words: Lesser Bloodstone Deposits = {object:2653} Lesser Bloodstone Deposit
+	["The Drywhisker kobolds dig in the gorge east of {area:321} (Horde); skirt the town to the north. They drop the Motes of Myzrael, not Krazek's ore. Lesser Bloodstone Deposits need {skill:186} 75: mine four ore, buy them at the Auction House, or ask a miner friend. The ore goal is optional; continue with Myzrael if you cannot get it. Careful: Every kobold type runs off for help when low on health (Kobolds at 30%, Surveyors and Diggers at 15%), which can pull more of them."] = "Os kobolds Bigodesseco cavam no desfiladeiro a leste de {area:321} (Horda); contorne a cidade pelo norte. Eles deixam cair as Partículas de Myzrael, não o minério do Krazek. Depósitos de Pedra-sangrenta Menor exigem {skill:186} 75: minere quatro minérios, compre-os na Casa de Leilões ou peça a um amigo minerador. O objetivo do minério é opcional; continue com Myzrael se não conseguir. Cuidado: todo tipo de kobold sai correndo atrás de ajuda com pouca vida (Kobolds com 30%, Topógrafos e Escavadores com 15%), o que pode trazer mais deles.",
 	-- {item:4435} Mote of Myzrael · {npc:2572} Drywhisker Kobold · {npc:2573} Drywhisker Surveyor · {npc:2574} Drywhisker Digger
 	["{item:4435} from {npc:2572}, {npc:2573} and {npc:2574}, by this stop"] = "{item:4435} de {npc:2572}, {npc:2573} e {npc:2574}, perto desta parada",
 
-	-- Step 31: Iridescent Shards
+	-- Step 30: Iridescent Shards
 	-- {area:318} Drywhisker Gorge
 	["The shards lie at the far end of {area:318}."] = "Os estilhaços estão no fundo do {area:318}.",
 	["Below ground"] = "No subterrâneo",
 
-	-- Step 32: Stones of Binding
+	-- Step 31: Stones of Binding
 	-- {area:320} Refuge Pointe · {object:2702} Stone of Inner Binding
 	-- plural, as words: Burning Exiles = {npc:2760} Burning Exile · Thundering Exiles = {npc:2762} Thundering Exile · Cresting Exiles = {npc:2761} Cresting Exile
 	["Each key lies at one of the Highlands' standing-stone circles: east of the shards, near {area:320} and in the west. The {object:2702} stands west of {area:320}.\nCareful: Each center stone is guarded by around three elementals near level 39 that attack together if you click the stone without clearing them: Burning Exiles at West, Thundering Exiles at Outer, Cresting Exiles at East."] = "Cada chave fica num dos círculos de monólitos do Planalto: a leste dos estilhaços, perto de {area:320} e no oeste. A {object:2702} fica a oeste de {area:320}.\nCuidado: cada pedra central é guardada por uns três elementais perto do nível 39, que atacam juntos se você clicar na pedra sem limpá-los antes: Exilados em Chamas no Oeste, Exilados Trovejantes no Externo, Exilados Vagalhantes no Leste.",
 
+	-- Step 32: Witherbark Village
+	-- {object:2691} Stone of East Binding · {area:314} Go'Shek Farm · {area:317} Witherbark Village
+	["South from the {object:2691}, past {area:314}, to {area:317} in the hills: the Witch Doctors stand among the huts and the Shadow Hunters guard the far end of the valley. Every troll can drop a tusk."] = "Para o sul a partir da {object:2691}, passando a {area:314}, até {area:317} nas colinas: os Mandingueiros ficam entre as cabanas e os Caçadores Sombrios guardam o fundo do vale. Todo troll pode soltar uma presa.",
+	-- {item:5040} Shadow Hunter Knife
+	["{item:5040}; below ground"] = "{item:5040}; no subterrâneo",
+
 	-- Step 33: Quae
-	-- {area:320} Refuge Pointe · {npc:2712} Quae · {npc:2713} Kinelory · {area:314} Go'Shek Farm
-	["Head back north-east past {area:320}; {npc:2712} and {npc:2713} camp in the hills north of {area:314}."] = "Volte para nordeste, passando por {area:320}; {npc:2712} e {npc:2713} acampam nas colinas ao norte de {area:314}.",
+	-- {npc:2712} Quae · {npc:2713} Kinelory · {area:314} Go'Shek Farm
+	["North-west out of the Witherbark valley; {npc:2712} and {npc:2713} camp in the hills just north of {area:314}."] = "Para noroeste, saindo do vale Cascasseca; {npc:2712} e {npc:2713} acampam nas colinas logo ao norte de {area:314}.",
 
 	-- Step 34: Forsaken Courier
 	-- {area:314} Go'Shek Farm
-	["The courier walks the road west of {area:314} with two guards; pull them off the road."] = "A mensageira anda pela estrada a oeste da {area:314} com dois guardas; atraia-os para fora da estrada.",
+	["The courier walks the road from {area:314} west across the Highlands, as far as about 24,45, and back, with two guards: the arrow follows the road west until you meet him. Pull them off the road."] = "O mensageiro anda pela estrada de {area:314} para oeste, atravessando o Planalto até mais ou menos 24,45, e volta, com dois guardas: a seta segue a estrada para oeste até você encontrá-lo. Atraia-os para fora da estrada.",
 
 	-- Step 36: Quae and Kinelory
 	-- {npc:2712} Quae · {npc:2713} Kinelory
@@ -220,7 +225,7 @@ return {
 
 	-- Step 52: Gavin's Naze
 	-- {area:271} Southshore · {area:280} Strahnbrad · {npc:2306} Baron Vardus
-	["Follow the road north out of {area:271} into the mountains. Mountain lions roam the slopes; the Syndicate in {area:280} wear the signet rings, and {npc:2306} walks the manor grounds on the north side of town."] = "Siga a estrada para o norte saindo de {area:271} até as montanhas. Leões da montanha vagam pelas encostas; a Camarilha em {area:280} usa os anéis de sinete, e {npc:2306} anda pelos terrenos do solar no lado norte da cidade.",
+	["Follow the road north out of {area:271} into the mountains. Mountain lions roam the slopes; the Syndicate in {area:280} wear the signet rings. {npc:2306} (40) turns up in one spot at a time: the cellar of {area:280}'s inn, or one of the Syndicate tent camps in the uplands north and north-west of the village."] = "Siga a estrada para o norte saindo de {area:271} até as montanhas. Leões da montanha vagam pelas encostas; a Camarilha em {area:280} usa os anéis de sinete. {npc:2306} (40) aparece em um lugar de cada vez: no porão da estalagem de {area:280} ou em um dos acampamentos de tendas da Camarilha nas terras altas ao norte e a noroeste do vilarejo.",
 
 	-- Step 53: Ruins of Alterac: kill these as you meet them
 	-- {area:281} Ruins of Alterac
@@ -235,7 +240,7 @@ return {
 
 	-- Step 54: Ruins of Alterac: kill these as you meet them
 	-- {npc:2417} Grel'borg the Miser
-	["These are elite mobs: grouping up is encouraged, look for people to do it with. {npc:2417} is a level 40 elite: most classes solo it at level 42, but you may need help. Skip it if you are alone: the route has you grind the XP back."] = "São monstros elite: vale a pena formar grupo, procure gente para ir junto. {npc:2417} é elite de nível 40: a maioria das classes encara sozinha no nível 42, mas talvez você precise de ajuda. Se estiver sozinho, pule: a rota faz você recuperar a XP matando monstros.",
+	["These are elite mobs: grouping up is encouraged, look for people to do it with. {npc:2417} is a level 40 elite: most classes solo it at level 42, but you may need help. Skip it if you are alone: the route has you grind the XP back.\n{npc:2417} walks from the arrow north-east through the ruins to about 40,47 and back: if he isn't at the arrow, follow his path."] = "São monstros elite: vale a pena formar grupo, procure gente para ir junto. {npc:2417} é elite de nível 40: a maioria das classes encara sozinha no nível 42, mas talvez você precise de ajuda. Se estiver sozinho, pule: a rota faz você recuperar a XP matando monstros.\n{npc:2417} anda da seta para nordeste pelas ruínas até mais ou menos 40,47 e volta: se ele não estiver na seta, siga o caminho dele.",
 
 	-- Step 55: Strahnbrad: kill these as you meet them
 	-- {area:280} Strahnbrad
@@ -286,13 +291,20 @@ return {
 	["South-east along the loch to the dig site."] = "Para sudeste ao longo do lago até o sítio de escavação.",
 
 	-- No longer in the guide (its English changed or it went away): reuse or delete.
+	-- ["A few Witherbark trolls camp south of Northfold, on the way; the main village lies in the hills south of {area:314} in the south-east, where the Witch Doctors stand and the Shadow Hunters guard the far end of the valley. Every troll can drop a tusk."] = "Alguns trolls Cascasseca acampam ao sul de Northfold, no caminho; a aldeia principal fica nas colinas ao sul de {area:314}, no sudeste, onde ficam os Mandingueiros e os Caçadores Sombrios guardam a outra ponta do vale. Todo troll pode soltar uma presa.",
+	-- ["A {npc:2434} lurks unseen on the edge of {area:271}; kill him and read the contract he carries."] = "Um {npc:2434} espreita invisível na borda de {area:271}; mate-o e leia o contrato que ele carrega.",
 	-- ["Each key lies at one of the Highlands' standing-stone circles: east of the shards, near {area:320} and in the west. The {object:2702} stands west of {area:320}."] = "Cada chave está num dos círculos de menires do Planalto: a leste dos estilhaços, perto do {area:320} e no oeste. A {object:2702} fica a oeste do {area:320}.",
+	-- ["East along the road to the {area:76}. {npc:256028} mobs drop the crystals; Noboru walks the ruins and drops his cudgel."] = "Para leste pela estrada até o {area:76}. Os {npc:256028} deixam cair os cristais; Noboru anda pelas ruínas e deixa cair sua borduna.",
 	-- ["Ebenezer Rustlocke"] = "Ebenezer Ferratranca",
 	-- ["Escort the professor to the beach north of the cove and guard him while he works; naga attack in waves."] = "Escolte o professor até a praia ao norte da enseada e proteja-o enquanto ele trabalha; os nagas atacam em ondas.",
+	-- ["Follow the road north out of {area:271} into the mountains. Mountain lions roam the slopes; the Syndicate in {area:280} wear the signet rings, and {npc:2306} walks the manor grounds on the north side of town."] = "Siga a estrada para o norte saindo de {area:271} até as montanhas. Leões da montanha vagam pelas encostas; a Camarilha em {area:280} usa os anéis de sinete, e {npc:2306} anda pelos terrenos do solar no lado norte da cidade.",
 	-- ["Follow the road south over the bridge to {area:205} at the {zone:1437} end, where {npc:1075} waits."] = "Siga a estrada para o sul pela ponte até {area:205}, no lado do {zone:1437}, onde {npc:1075} espera.",
 	-- ["From {area:42} follow the road east through {zone:1430} into the {zone:1435}; Biggs guards the road junction just inside it. {npc:217412} stands a short way north of him."] = "De {area:42}, siga a estrada para leste por {zone:1430} até o {zone:1435}; Biggs vigia o cruzamento logo na entrada. {npc:217412} fica um pouco ao norte dele.",
 	-- ["From {zone:1455} take the tunnel east through {zone:1426} into {area:38} and follow the road to {area:144}."] = "De {zone:1455}, pegue o túnel para leste por {zone:1426} até {area:38} e siga a estrada até {area:144}.",
 	-- ["Gyll, {area:35}"] = "Gyll, {area:35}",
+	-- ["Head back north-east past {area:320}; {npc:2712} and {npc:2713} camp in the hills north of {area:314}."] = "Volte para nordeste, passando por {area:320}; {npc:2712} e {npc:2713} acampam nas colinas ao norte de {area:314}.",
+	-- ["Head back south from the eastern circle; {npc:2712} and {npc:2713} camp in the hills just north of {area:314}."] = "Volte para o sul a partir do círculo leste; {npc:2712} e {npc:2713} acampam nas colinas logo ao norte de {area:314}.",
+	-- ["Head north past {area:314}; the shards glitter on the hill by the {area:333}."] = "Siga para o norte, passando a {area:314}; os estilhaços brilham na colina junto ao {area:333}.",
 	-- ["Ride back north-east past {area:320}; {npc:2712} and {npc:2713} camp in the hills north of {area:314}."] = "Cavalgue de volta para nordeste, passando o {area:320}; {npc:2712} e {npc:2713} acampam nas colinas ao norte da {area:314}.",
 	-- ["Shaman training"] = "Treino de xamã",
 	-- ["South-east from Northfold to the Witherbark trolls in the hills south of {area:314}; Witch Doctors stand in the village, Shadow Hunters guard the far end of the valley. Every troll here can drop a tusk."] = "Ao sudeste de Northfold até os trolls Cascasseca nas colinas ao sul de {area:314}; Mandingueiros ficam na aldeia, Caçadores Sombrios guardam o extremo do vale. Todo troll daqui pode soltar uma presa.",
@@ -301,13 +313,16 @@ return {
 	-- ["Subdue the succubus"] = "Subjugue a súcubo",
 	-- ["The Crushridge ogres hold the hills north of {area:280}. Farther north, a worn wooden chest holds the {item:3706}; {npc:2320} of the {quest:537} stands right by it."] = "Os ogros Massacristas ocupam as colinas ao norte de {area:280}. Mais ao norte, um baú de madeira gasto guarda o {item:3706}; {npc:2320}, do {quest:537}, fica bem ao lado.",
 	-- ["The Drywhisker kobolds dig in the gorge east of {area:321} (Horde); skirt the town to the north. They drop both the motes and Krazek's ore."] = "Os kobolds Bigodesseco cavam no desfiladeiro a leste de {area:321} (Horda); contorne a cidade pelo norte. Eles deixam cair tanto as partículas quanto o minério de Krazek.",
+	-- ["The Drywhisker kobolds dig in the gorge east of {area:321} (Horde); skirt the town to the north. They drop both the motes and Krazek's ore.\nCareful: Every kobold type runs off for help when low on health (Kobolds at 30%, Surveyors and Diggers at 15%), which can pull more of them."] = "Os kobolds Bigodesseco cavam no desfiladeiro a leste de {area:321} (Horda); contorne a cidade pelo norte. Eles deixam cair tanto as partículas quanto o minério do Krazek.\nCuidado: todo tipo de kobold sai correndo atrás de ajuda com pouca vida (Kobolds com 30%, Topógrafos e Escavadores com 15%), o que pode trazer mais deles.",
 	-- ["The Syndicate hold the farm north-west of {area:320}. A {npc:217589} crawls about the farm: catch one with {npc:217412}'s Entomology Starter Kit, then tick it off."] = "A Camarilha ocupa a fazenda a noroeste do {area:320}. Um {npc:217589} rasteja pela fazenda: capture um com o kit de entomologia de {npc:217412} e depois marque-o.",
 	-- ["The Syndicate hold the farm north-west of {area:320}. A {npc:217589} crawls about the farm: catch one with {npc:217412}'s Entomology Starter Kit, then tick it off.\nCareful: Syndicate Highwaymen are level 30-31 and can cast Sneak while out of combat, so they are often stealthed and hard to spot."] = "A Camarilha ocupa a fazenda a noroeste de {area:320}. Um {npc:217589} rasteja pela fazenda: pegue um com o kit de entomologia de {npc:217412} e marque.\nCuidado: os Bandoleiros da Camarilha são nível 30-31 e ficam furtivos fora de combate, então costumam estar escondidos e difíceis de ver.",
 	-- ["The Witherbark trolls live in the hills south of {area:314}; Witch Doctors stand in the village, Shadow Hunters guard the far end of the valley."] = "Os trolls Cascasseca vivem nas colinas ao sul da {area:314}; os Mandingueiros ficam na aldeia, os Caçadores Sombrios guardam o fundo do vale.",
+	-- ["The courier walks the road west of {area:314} with two guards; pull them off the road."] = "A mensageira anda pela estrada a oeste da {area:314} com dois guardas; atraia-os para fora da estrada.",
 	-- ["The tomes lie in the ruined keep west of {area:280}; Argus Shadow Mages hold the ruins."] = "Os tomos estão na fortaleza em ruínas a oeste de {area:280}; Magos das Sombras Argus ocupam as ruínas.",
 	-- ["The tomes lie in the ruined keep west of {area:280}; Argus Shadow Mages hold the ruins.\nCareful: Crushridge Warmongers call nearby allies within 15 yd once they fall below half health."] = "Os tomos estão na fortaleza em ruínas a oeste de {area:280}; Magos das Sombras Argus ocupam as ruínas.\nCuidado: os Fomentadores da Guerra Massacrista chamam aliados num raio de 15 m quando ficam abaixo de metade da vida.",
 	-- ["The wrecked caravan lies off the road near Biggs."] = "A caravana destruída fica fora da estrada, perto de Biggs.",
 	-- ["The wrecks"] = "Os naufrágios",
+	-- ["These are elite mobs: grouping up is encouraged, look for people to do it with. {npc:2417} is a level 40 elite: most classes solo it at level 42, but you may need help. Skip it if you are alone: the route has you grind the XP back."] = "São monstros elite: vale a pena formar grupo, procure gente para ir junto. {npc:2417} é elite de nível 40: a maioria das classes encara sozinha no nível 42, mas talvez você precise de ajuda. Se estiver sozinho, pule: a rota faz você recuperar a XP matando monstros.",
 	-- ["Walk back onto the span: Ebenezer lies under its Arathi end."] = "Volte para a ponte: Ebenezer está embaixo da ponta do lado de Arathi.",
 	-- ["West along the coast to the goblins' cove; Lolo keeps watch on the rocks above it."] = "Para oeste pela costa até a enseada dos goblins; Lolo vigia das pedras acima dela.",
 	-- ["{item:2321} for {npc:2438}'s cloak, from {npc:2381}, if you have none"] = "{item:2321} para o manto de {npc:2438}, de {npc:2381}, se você não tiver",
