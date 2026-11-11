@@ -105,8 +105,10 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   map fades in only once it is 0.3 to 0.5 of its size, so one zoom shows one level of sharpness. `dash-art`
   cuts each zone's map to its own land (where its exploration overlays paint): the maps are overlapping
   rectangles that also sketch their neighbours, and a neighbour's sketch used to cover a zone's own
-  detail. Re-run `dash-art` on the art folder after changing it (it rebuilds `zones-soft/` when its
-  `SOFT_VERSION` changes; the client files it needs are cached under `data/sources/casc`). Check with
+  detail (a map without overlays gives up the ground other zones own instead; a city's stays whole).
+  Re-run `dash-art` on the art folder after changing it (it rebuilds `zones-soft/` when its
+  `SOFT_VERSION` changes, and the index names the files with `?v=<version>` so browsers fetch them again;
+  the server sends `index.json` with `no-cache`; the client files it needs are cached under `data/sources/casc`). Check with
   `node tools/map-check.cjs http://127.0.0.1:8799 <out dir>`: screenshots of four places at nine zooms
   (it moves the map through `window.__dashView`).
 - **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with

@@ -456,6 +456,7 @@ async fn serve(args: &[String]) {
 	let fonts = args.iter().position(|a| a == "--fonts").and_then(|i| args.get(i + 1)).map_or_else(|| here.join("../../addon/Polestar/Media/Fonts"), std::path::PathBuf::from);
 	let web = arg(args, "--web", &here.join("ui/dist").to_string_lossy());
 	let art = arg(args, "--art", "art");
+	let art_index_file = PathBuf::from(&art).join("index.json");
 	let db: Db = Arc::new(Mutex::new(db::open(&db_path).expect("open the database")));
 	let tokens: Vec<String> = match args.iter().position(|a| a == "--tokens").and_then(|i| args.get(i + 1)) {
 		Some(f) => std::fs::read_to_string(f).expect("read --tokens").lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_string).collect(),
@@ -514,6 +515,9 @@ async fn serve(args: &[String]) {
 		.route("/api/signin", post(sign_in))
 		.route("/api/signout", post(sign_out))
 		// `planner art` stores terrain tiles gzipped (x.bc1.gz); MapView asks for x.bc1.
+		// The art's index is always asked for again (it names the zone maps by version): without a
+		// cache lifetime browsers guess one from the file's age, and showed old art for hours.
+		.route("/art/index.json", get(move |req: axum::extract::Request| art_index(art_index_file.clone(), req)))
 		.nest_service("/art", ServeDir::new(art).precompressed_gzip())
 		// Inter and Fira Sans (SIL OFL 1.1), as the addon ships them.
 		.nest_service("/fonts", ServeDir::new(fonts))
@@ -523,6 +527,17 @@ async fn serve(args: &[String]) {
 	let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
 	println!("forever-dash listening on http://{addr} (db {db_path})");
 	axum::serve(listener, app).await.unwrap();
+}
+
+/// The art's index, never served from a browser's cache without asking.
+async fn art_index(file: PathBuf, req: axum::extract::Request) -> Response {
+	use tower::ServiceExt;
+	let mut res = match tower_http::services::ServeFile::new(file).oneshot(req).await {
+		Ok(r) => r.into_response(),
+		Err(e) => return err500(e),
+	};
+	res.headers_mut().insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("no-cache"));
+	res
 }
 
 /// A file of the Spoken version being served (`/spoken/<Pack>/generated/sounds/quests/<file>.ogg`).

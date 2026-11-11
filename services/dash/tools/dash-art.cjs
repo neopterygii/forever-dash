@@ -15,8 +15,11 @@
 //    (Durotar's and Mulgore's covered most of the Barrens). The zone's own land is where its
 //    exploration overlays paint (WorldMapOverlay, the coloured areas the game reveals as you
 //    explore), with the seams and holes between them closed; the rest is made transparent. A map
-//    without overlays (the cities, the battlegrounds) is kept whole, faded out over its outer part.
-//    The originals stay in zones/.
+//    without overlays cannot be cut that way: it gives up the ground other zones own instead
+//    (Shen'dralas, whose sketch of Mulgore lay over western Mulgore), unless it is a town drawn
+//    inside its zone (the cities), which is kept whole, faded out over its outer part. The
+//    originals stay in zones/. The index names each file with ?v=<SOFT_VERSION>: the server sends
+//    no cache lifetime, so browsers would go on showing the old pictures for hours.
 //
 //   node services/dash/tools/dash-art.cjs <art dir>
 const fs = require('node:fs');
@@ -33,7 +36,9 @@ const SEAM = 6;
 /** Overlays covering less of a map than this are not its land (a stray overlay): the map is kept whole. */
 const MIN_LAND = 0.08;
 /** Bump to rebuild every feathered zone map. */
-const SOFT_VERSION = '2';
+const SOFT_VERSION = '3';
+/** A map with at least this many pixels per yard is a town's (ui/src/lib/worldmap.ts, INSET_DENSITY). */
+const TOWN_DENSITY = 0.5;
 /** A map this large (yd²) is a continent: kept whole, it is the backdrop. */
 const CONTINENT_AREA = 2e8;
 
@@ -238,33 +243,67 @@ async function overlayCoverage(ids) {
 	return out;
 }
 
-// Cut and feathered copies of every zone map but the continents; the index points at them.
+// For a map without overlays: 1 minus the other zones' own land under each of its pixels.
+// frame: world yards of the picture's edges (left/right along the picture's x, top/bottom along y).
+function notOthers(z, others) {
+	const out = new Float32Array(z.w * z.h).fill(1);
+	const f = z.frame;
+	for (const o of others) {
+		const g = o.frame;
+		for (let y = 0; y < z.h; y++) {
+			const py = Math.floor((((f.top + ((y + 0.5) / z.h) * (f.bottom - f.top)) - g.top) / (g.bottom - g.top)) * o.h);
+			if (py < 0 || py >= o.h) continue;
+			for (let x = 0; x < z.w; x++) {
+				const px = Math.floor((((f.left + ((x + 0.5) / z.w) * (f.right - f.left)) - g.left) / (g.right - g.left)) * o.w);
+				if (px < 0 || px >= o.w) continue;
+				const k = 1 - o.land[py * o.w + px];
+				if (k < out[y * z.w + x]) out[y * z.w + x] = k;
+			}
+		}
+	}
+	return out;
+}
+
+// Cut and feathered copies of every zone map but the continents; the index points at them. All
+// are made again when one is missing or older than its original: a map's cut depends on the others.
 async function softZones(out, index) {
 	const dir = path.join(out, 'zones-soft');
 	fs.mkdirSync(dir, { recursive: true });
 	const stamp = path.join(dir, '.version');
-	const all = !fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8').trim() !== SOFT_VERSION;
-	const todo = [];
+	let stale = !fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8').trim() !== SOFT_VERSION;
+	const maps = [];
 	for (const [id, z] of Object.entries(index.zones || {})) {
 		const area = Math.abs((z.frame.left - z.frame.right) * (z.frame.top - z.frame.bottom));
 		const source = path.join(out, 'zones', `${id}.png`);
 		if (area >= CONTINENT_AREA || !fs.existsSync(source)) continue;
 		const target = path.join(dir, `${id}.png`);
-		if (all || !fs.existsSync(target) || fs.statSync(target).mtimeMs < fs.statSync(source).mtimeMs) todo.push({ id, w: z.w, h: z.h, source, target });
-		z.file = `zones-soft/${id}.png`;
+		if (!fs.existsSync(target) || fs.statSync(target).mtimeMs < fs.statSync(source).mtimeMs) stale = true;
+		maps.push({ id, c: z.c, w: z.w, h: z.h, frame: z.frame, source, target });
+		z.file = `zones-soft/${id}.png?v=${SOFT_VERSION}`;
 	}
-	const covered = todo.length ? await overlayCoverage(todo) : new Map();
-	let cut = 0;
-	for (const { id, source, target } of todo) {
-		const img = decodePng(fs.readFileSync(source));
-		const c = covered.get(id);
-		const land = c && c.w === img.w && c.h === img.h ? ownLand(c.coverage, img.w, img.h) : null;
+	if (!stale) return { made: 0, cut: 0, yielded: 0 };
+	const covered = await overlayCoverage(maps);
+	for (const m of maps) {
+		const c = covered.get(m.id);
+		m.land = c ? ownLand(c.coverage, m.w, m.h) : null;
+	}
+	let cut = 0, yielded = 0;
+	for (const m of maps) {
+		const img = decodePng(fs.readFileSync(m.source));
+		let land = img.w === m.w && img.h === m.h ? m.land : null;
 		if (land) cut++;
-		fs.writeFileSync(`${target}.tmp`, encodePng(feather(img, land), img.w, img.h));
-		fs.renameSync(`${target}.tmp`, target);
+		else if (img.w === m.w && img.h === m.h && m.w / Math.abs(m.frame.left - m.frame.right) < TOWN_DENSITY) {
+			const others = maps.filter((o) => o !== m && o.c === m.c && o.land);
+			if (others.length) {
+				land = notOthers(m, others);
+				yielded++;
+			}
+		}
+		fs.writeFileSync(`${m.target}.tmp`, encodePng(feather(img, land), img.w, img.h));
+		fs.renameSync(`${m.target}.tmp`, m.target);
 	}
 	fs.writeFileSync(stamp, SOFT_VERSION);
-	return { made: todo.length, cut };
+	return { made: maps.length, cut, yielded };
 }
 
 if (require.main !== module) {
@@ -302,7 +341,7 @@ build.exports
 		index.world = { file: world.file, w: world.w, h: world.h, sea: [0, 1, 2].map((i) => Math.round(sea.reduce((a, p) => a + p[i], 0) / sea.length)), ...worldLayout() };
 		return softZones(out, index).then((soft) => {
 			fs.writeFileSync(indexFile, JSON.stringify(index));
-			console.log(`world map ${world.file} ${world.w}x${world.h}, layout ${JSON.stringify(index.world.continents)}; zones: ${Object.keys(index.zones).length} (${soft.made} feathered, ${soft.cut} of them cut to their own land); warnings: ${r.warnings.length}`);
+			console.log(`world map ${world.file} ${world.w}x${world.h}, layout ${JSON.stringify(index.world.continents)}; zones: ${Object.keys(index.zones).length} (${soft.made} feathered: ${soft.cut} cut to their own land, ${soft.yielded} to what the others leave); warnings: ${r.warnings.length}`);
 		});
 	})
 	.catch((e) => {

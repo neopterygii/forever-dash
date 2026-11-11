@@ -20,6 +20,11 @@ const PLACES = [
 	{ name: 'orgrimmar-durotar', c: 1, wx: 1500, wy: -4400 },
 	{ name: 'ironforge-dunmorogh', c: 0, wx: -5000, wy: -900 },
 ];
+// PLACE=name,c,wx,wy looks at one other place instead.
+if (process.env.PLACE) {
+	const [name, c, wx, wy] = process.env.PLACE.split(',');
+	PLACES.splice(0, PLACES.length, { name, c: Number(c), wx: Number(wx), wy: Number(wy) });
+}
 const ZOOMS = (process.env.ZOOMS || '0.06,0.1,0.15,0.22,0.33,0.5,0.75,1.1,1.7').split(',').map(Number);
 
 function chrome() {
