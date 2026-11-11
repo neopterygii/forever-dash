@@ -9,9 +9,14 @@
 //    (tools/lib/planner/art/build.js loaded with that one constant changed, and 947 given a frame,
 //    which the painting needs to be composed), so it follows upstream and fails loudly if that
 //    constant changes. Existing tiles and zones are kept.
-// 2. Zone maps with feathered edges (zones-soft/<id>.png; the index points at them): each zone's
-//    painted map ends in its own parchment frame; faded out over its outer part, neighbouring zones
-//    and the terrain under them meet without hard rectangles. The originals stay in zones/.
+// 2. Zone maps cut to their own land, edges feathered (zones-soft/<id>.png; the index points at
+//    them). A zone's painted map is a rectangle that also sketches its neighbours in sepia, and
+//    the rectangles overlap: drawn whole, a neighbour's sketch hides a zone's own detailed map
+//    (Durotar's and Mulgore's covered most of the Barrens). The zone's own land is where its
+//    exploration overlays paint (WorldMapOverlay, the coloured areas the game reveals as you
+//    explore), with the seams and holes between them closed; the rest is made transparent. A map
+//    without overlays (the cities, the battlegrounds) is kept whole, faded out over its outer part.
+//    The originals stay in zones/.
 //
 //   node services/dash/tools/dash-art.cjs <art dir>
 const fs = require('node:fs');
@@ -22,6 +27,13 @@ const { encodePng } = require('../../../tools/lib/planner/art/png');
 
 /** Of a zone map's smaller side, the outer part faded to transparent. */
 const FEATHER = 0.08;
+/** A zone's own land: its overlays' coverage, seams up to about this many pixels closed, the edge
+ *  faded over about as many. */
+const SEAM = 6;
+/** Overlays covering less of a map than this are not its land (a stray overlay): the map is kept whole. */
+const MIN_LAND = 0.08;
+/** Bump to rebuild every feathered zone map. */
+const SOFT_VERSION = '2';
 /** A map this large (yd²) is a continent: kept whole, it is the backdrop. */
 const CONTINENT_AREA = 2e8;
 
@@ -123,44 +135,140 @@ function decodePng(buf) {
 	return { rgba, w, h };
 }
 
-// Alpha faded to 0 over the outer FEATHER of the smaller side (smoothstep).
-function feather({ rgba, w, h }) {
+// Alpha faded to 0 over the outer FEATHER of the smaller side (smoothstep), and times `land`
+// (0..1 per pixel) when the zone's own land is known.
+function feather({ rgba, w, h }, land = null) {
 	const band = Math.max(4, Math.round(Math.min(w, h) * FEATHER));
 	const out = Buffer.from(rgba);
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const d = Math.min(x, y, w - 1 - x, h - 1 - y);
-			if (d >= band) continue;
-			const t = d / band, k = t * t * (3 - 2 * t), i = (y * w + x) * 4 + 3;
-			out[i] = Math.round(out[i] * k);
+			const t = Math.min(1, d / band), k = t * t * (3 - 2 * t) * (land ? land[y * w + x] : 1), i = (y * w + x) * 4 + 3;
+			if (k < 1) out[i] = Math.round(out[i] * k);
 		}
 	}
 	return out;
 }
 
-// Feathered copies of every zone map but the continents; the index points at them.
-function softZones(out, index) {
+// Box blur of a w x h float image, radius r (edges clamped).
+function blur(src, w, h, r) {
+	const pass = (a, n, stride, lines, step) => {
+		const b = new Float32Array(a.length);
+		for (let l = 0; l < lines; l++) {
+			const at = (i) => a[l * step + Math.max(0, Math.min(n - 1, i)) * stride];
+			let sum = 0;
+			for (let i = -r; i <= r; i++) sum += at(i);
+			for (let i = 0; i < n; i++) {
+				b[l * step + i * stride] = sum / (2 * r + 1);
+				sum += at(i + r + 1) - at(i - r);
+			}
+		}
+		return b;
+	};
+	return pass(pass(src, w, 1, h, w), h, w, w, 1);
+}
+
+// A zone's own land (0..1 per pixel) from its overlays' coverage (0..255 per pixel), or null when
+// the overlays cover too little to be it: seams between overlays closed, holes no path leads out
+// of filled (land the overlays skip, inside the zone), the edge faded.
+function ownLand(coverage, w, h) {
+	const hard = Float32Array.from(coverage, (v) => (v > 64 ? 1 : 0));
+	if (hard.reduce((a, v) => a + v, 0) < MIN_LAND * w * h) return null;
+	const closed = blur(hard, w, h, SEAM).map((v) => (v > 0.25 ? 1 : 0));
+	const outside = new Uint8Array(w * h);
+	const todo = [];
+	const visit = (i) => {
+		if (!closed[i] && !outside[i]) {
+			outside[i] = 1;
+			todo.push(i);
+		}
+	};
+	for (let x = 0; x < w; x++) visit(x), visit((h - 1) * w + x);
+	for (let y = 0; y < h; y++) visit(y * w), visit(y * w + w - 1);
+	while (todo.length) {
+		const i = todo.pop(), x = i % w;
+		if (x > 0) visit(i - 1);
+		if (x < w - 1) visit(i + 1);
+		if (i >= w) visit(i - w);
+		if (i < w * (h - 1)) visit(i + w);
+	}
+	return blur(Float32Array.from(outside, (v) => 1 - v), w, h, SEAM).map((v) => {
+		const t = Math.max(0, Math.min(1, (v - 0.2) / 0.6));
+		return t * t * (3 - 2 * t);
+	});
+}
+
+// Per zone map, where its overlays paint: id -> { coverage (0..255 per pixel), w, h }. Each overlay
+// is drawn white on black with the build's own tile drawing, so the canvas holds the coverage.
+async function overlayCoverage(ids) {
+	const { openCasc } = require('../../../tools/lib/planner/art/casc');
+	const { decodeBlp } = require('../../../tools/lib/planner/art/blp');
+	const { buildOverlays } = require('../../../tools/lib/maps/overlays');
+	const { SOURCES } = require('../../../tools/lib/paths');
+	const casc = await openCasc({ sourcesDir: SOURCES });
+	const tables = await build.exports.loadTables({ sourcesDir: SOURCES, build: casc.build, log: () => {} });
+	const n = Number;
+	const artOf = new Map();
+	for (const r of [...tables.UiMapXMapArt].sort((a, b) => n(a.PhaseID) - n(b.PhaseID) || n(a.ID) - n(b.ID))) if (!artOf.has(r.UiMapID)) artOf.set(r.UiMapID, n(r.UiMapArtID));
+	const arts = buildOverlays(tables).arts;
+	const fileSize = (pixels) => {
+		let s = 16;
+		while (s < pixels) s *= 2;
+		return s;
+	};
+	const out = new Map();
+	for (const { id, w, h } of ids) {
+		const art = arts[artOf.get(id)];
+		if (!art?.overlays.length) continue;
+		const tw = art.tileWidth, th = art.tileHeight;
+		const canvas = new Uint8Array(w * h * 4);
+		for (const o of art.overlays) {
+			const cols = Math.ceil(o.width / tw), rows = o.files.length / cols;
+			for (const [i, fdid] of o.files.entries()) {
+				const blp = decodeBlp(await casc.get(fdid), { levels: 1 });
+				const img = Uint8Array.from(blp.mips[0].rgba);
+				for (let k = 0; k < img.length; k += 4) img[k] = img[k + 1] = img[k + 2] = 255;
+				const r = Math.floor(i / cols), c = i % cols;
+				const pw = c < cols - 1 ? tw : o.width - c * tw || tw, ph = r < rows - 1 ? th : o.height - r * th || th;
+				build.exports.drawTile(canvas, w, h, img, blp.width, blp.height, o.x + c * tw, o.y + r * th, pw, ph, c < cols - 1 ? tw : fileSize(pw), r < rows - 1 ? th : fileSize(ph));
+			}
+		}
+		out.set(id, { coverage: Uint8Array.from({ length: w * h }, (_, i) => canvas[i * 4]), w, h });
+	}
+	return out;
+}
+
+// Cut and feathered copies of every zone map but the continents; the index points at them.
+async function softZones(out, index) {
 	const dir = path.join(out, 'zones-soft');
 	fs.mkdirSync(dir, { recursive: true });
-	let n = 0;
+	const stamp = path.join(dir, '.version');
+	const all = !fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8').trim() !== SOFT_VERSION;
+	const todo = [];
 	for (const [id, z] of Object.entries(index.zones || {})) {
 		const area = Math.abs((z.frame.left - z.frame.right) * (z.frame.top - z.frame.bottom));
-		if (area >= CONTINENT_AREA || !z.file?.startsWith('zones/')) continue;
+		const source = path.join(out, 'zones', `${id}.png`);
+		if (area >= CONTINENT_AREA || !fs.existsSync(source)) continue;
 		const target = path.join(dir, `${id}.png`);
-		const source = path.join(out, z.file);
-		if (!fs.existsSync(target) || fs.statSync(target).mtimeMs < fs.statSync(source).mtimeMs) {
-			const img = decodePng(fs.readFileSync(source));
-			fs.writeFileSync(`${target}.tmp`, encodePng(feather(img), img.w, img.h));
-			fs.renameSync(`${target}.tmp`, target);
-			n++;
-		}
+		if (all || !fs.existsSync(target) || fs.statSync(target).mtimeMs < fs.statSync(source).mtimeMs) todo.push({ id, w: z.w, h: z.h, source, target });
 		z.file = `zones-soft/${id}.png`;
 	}
-	return n;
+	const covered = todo.length ? await overlayCoverage(todo) : new Map();
+	let cut = 0;
+	for (const { id, source, target } of todo) {
+		const img = decodePng(fs.readFileSync(source));
+		const c = covered.get(id);
+		const land = c && c.w === img.w && c.h === img.h ? ownLand(c.coverage, img.w, img.h) : null;
+		if (land) cut++;
+		fs.writeFileSync(`${target}.tmp`, encodePng(feather(img, land), img.w, img.h));
+		fs.renameSync(`${target}.tmp`, target);
+	}
+	fs.writeFileSync(stamp, SOFT_VERSION);
+	return { made: todo.length, cut };
 }
 
 if (require.main !== module) {
-	module.exports = { decodePng, feather };
+	module.exports = { decodePng, feather, ownLand, blur };
 	return;
 }
 const out = process.argv[2];
@@ -192,9 +300,10 @@ build.exports
 			return [img.rgba[k], img.rgba[k + 1], img.rgba[k + 2]];
 		});
 		index.world = { file: world.file, w: world.w, h: world.h, sea: [0, 1, 2].map((i) => Math.round(sea.reduce((a, p) => a + p[i], 0) / sea.length)), ...worldLayout() };
-		const softened = softZones(out, index);
-		fs.writeFileSync(indexFile, JSON.stringify(index));
-		console.log(`world map ${world.file} ${world.w}x${world.h}, layout ${JSON.stringify(index.world.continents)}; zones: ${Object.keys(index.zones).length} (${softened} feathered); warnings: ${r.warnings.length}`);
+		return softZones(out, index).then((soft) => {
+			fs.writeFileSync(indexFile, JSON.stringify(index));
+			console.log(`world map ${world.file} ${world.w}x${world.h}, layout ${JSON.stringify(index.world.continents)}; zones: ${Object.keys(index.zones).length} (${soft.made} feathered, ${soft.cut} of them cut to their own land); warnings: ${r.warnings.length}`);
+		});
 	})
 	.catch((e) => {
 		console.error(e.message);

@@ -11,7 +11,7 @@ node tools/brand.cjs                       # ui/public/brand/*.svg (committed; r
 # Map art and game icons (Blizzard's art: local only, never committed), from wago.tools, no game client needed:
 (cd ../../rust && cargo build --release -p forge && ./target/release/forge data build --no-questie --forever-tables wago)
 node ../../tools/polestar.js planner art --out <art dir>   # terrain + zone maps
-node tools/dash-art.cjs <art dir>                           # Azeroth world map + layout, feathered zone maps
+node tools/dash-art.cjs <art dir>                           # Azeroth world map + layout, zone maps cut to their own land
 node tools/export-icons.cjs <art dir>                       # race/sex portraits, class icons
 (cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
@@ -96,6 +96,19 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   journal's log lists meetings (not `seen`) with a button to the player's card; the top bar's People
   opens the list. Unit identity is secret in combat on Forever: fights name a player only when they
   were read before or after (best effort). Ours only, never relayed upstream.
+- **Map art by zoom** (`ui/src/lib/worldmap.ts`, `tools/dash-art.cjs`): the world painting far out, the
+  zones' painted maps at region scale, the minimap terrain close in. The sources, all at the client's
+  full size (checked against build 1.60.1.70532: no map uses the larger 3840x2560 art layers): terrain
+  at 512 px per 533-yard tile, about one pixel per yard everywhere; every painted map at 1002x668
+  whatever it covers, so from 0.10 px per yard (the Barrens) to 1.27 (Ironforge). Each painted map
+  therefore gives way to the terrain at its own zoom, when drawn 1.6 to 2.8 times its size, and a city's
+  map fades in only once it is 0.3 to 0.5 of its size, so one zoom shows one level of sharpness. `dash-art`
+  cuts each zone's map to its own land (where its exploration overlays paint): the maps are overlapping
+  rectangles that also sketch their neighbours, and a neighbour's sketch used to cover a zone's own
+  detail. Re-run `dash-art` on the art folder after changing it (it rebuilds `zones-soft/` when its
+  `SOFT_VERSION` changes; the client files it needs are cached under `data/sources/casc`). Check with
+  `node tools/map-check.cjs http://127.0.0.1:8799 <out dir>`: screenshots of four places at nine zooms
+  (it moves the map through `window.__dashView`).
 - **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with
   sample data and run `node tools/phone-check.cjs http://127.0.0.1:8799 <out dir>`. It opens every view
   (overview, a character, both journals with a quest card, diary editing, gear, bags and stats, people,

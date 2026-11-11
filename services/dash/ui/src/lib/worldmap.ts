@@ -6,6 +6,13 @@
 //   sharp minimap terrain as the (blurry close up) world painting fades out;
 // - close in: the terrain alone.
 //
+// Every zone's painting is the same 1002 x 668 pixels, whatever ground it covers: the Barrens' has a
+// tenth of a pixel per yard, Ironforge's thirteen times that. So each painting gives way to the
+// terrain (one pixel per yard everywhere) at its own zoom, where it is drawn about twice its size:
+// at any zoom everything on screen is about as sharp. A city's map, drawn inside its zone at a
+// finer scale, waits until it is no longer a miniature. The lower-resolution copy of a map the
+// client carries twice (Zephras Isle) is dropped.
+//
 // MapView keeps its layout and zone art private; this changes them on our map instance only (not
 // Polestar's code): its `_layout` (continent offsets) and its zone art layer's `draw` (the same loop
 // with a per-map opacity and the world painting first). It fails soft: without the fields it relies
@@ -17,8 +24,19 @@ const ZONES_IN: [number, number] = [0.04, 0.08];
 /** ... where the world painting gives way (blurry closer in; the sea between zone maps is then the
  *  painting's ocean colour, as a flat fill: the terrain's own sea is near black) ... */
 const WORLD_OUT: [number, number] = [0.07, 0.13];
-/** ... and where the zone maps and that sea give way to the terrain. */
+/** ... and where a zone map whose resolution is not known gives way to the terrain. */
 const TERRAIN_IN: [number, number] = [0.5, 1.1];
+/** A zone map gives way to the terrain over this range of magnification (screen px per pixel of
+ *  the painting): soft from about 1.5, mush by 3. */
+const ZONE_OUT_MAG: [number, number] = [1.6, 2.8];
+/** A map drawn inside a larger one (a city in its zone) fades in over this range of magnification:
+ *  below it, it is a sharp miniature pasted on a soft map. */
+const INSET_IN_MAG: [number, number] = [0.3, 0.5];
+/** A map is an inset when it is town-sized (at least this many pixels per yard: under 2000 yards
+ *  across; the smallest zone, Redridge, has 0.46 and Stormwind, the largest city, 0.58) and its
+ *  centre lies in a map several times its area. Zone frames overlap too much to tell by that alone. */
+const INSET_DENSITY = 0.5;
+const INSET_AREA = 3;
 /** Below this zoom the terrain is off: the painting covers the continents, and the terrain's far
  *  tiles (sea filled near black) would show around it. */
 const TERRAIN_FROM = 0.04;
@@ -47,6 +65,9 @@ interface Zone {
 	y1: number;
 	area: number;
 	world?: boolean;
+	/** Ours: the zooms over which it fades in (insets only) and gives way to the terrain. */
+	fadeIn?: [number, number];
+	fadeOut?: [number, number];
 }
 interface Tex {
 	status: string;
@@ -80,7 +101,7 @@ interface Quad {
 	end(): void;
 }
 interface Internals {
-	index?: { world?: World; continents?: Record<string, { name?: string }> };
+	index?: { world?: World; continents?: Record<string, { name?: string }>; zones?: Record<string, { w?: number; h?: number }> };
 	grid?: { draw: (f: unknown) => void };
 	/** The map shown: 'azeroth' (the continents of the world painting) or another continent id. */
 	__dashMap?: MapChoice;
@@ -158,12 +179,33 @@ export function showMap(view: MapViewApi, choice: MapChoice, fit = true): void {
 	}
 }
 
+/** Each zone map's own zooms, from how many pixels it has per yard (see the top of the file), and
+ *  duplicates dropped. Returns where the first map starts to give way and where the last is gone. */
+function fitZones(art: ZoneArt, px: Record<string, { w?: number; h?: number }>): { first: [number, number]; last: number } {
+	const density = (z: Zone) => (px[z.id]?.w ?? 0) / Math.max(1, Math.abs(z.x1 - z.x0));
+	const same = (a: Zone, b: Zone) => a.c === b.c && [a.x0 - b.x0, a.x1 - b.x1, a.y0 - b.y0, a.y1 - b.y1].every((d) => Math.abs(d) < 5);
+	art.zones = art.zones.filter((z) => !art.zones.some((o) => o !== z && same(o, z) && (density(o) > density(z) || (density(o) === density(z) && o.id < z.id))));
+	let first: [number, number] = TERRAIN_IN;
+	let last = 0;
+	for (const z of art.zones) {
+		const d = density(z);
+		const cx = (z.x0 + z.x1) / 2, cy = (z.y0 + z.y1) / 2;
+		const inset = d >= INSET_DENSITY && art.zones.some((o) => o.c === z.c && o.area >= z.area * INSET_AREA && cx > o.x0 && cx < o.x1 && cy > o.y0 && cy < o.y1);
+		z.fadeOut = d > 0 ? [ZONE_OUT_MAG[0] * d, ZONE_OUT_MAG[1] * d] : TERRAIN_IN;
+		if (inset) z.fadeIn = [INSET_IN_MAG[0] * d, INSET_IN_MAG[1] * d];
+		if (!inset && z.fadeOut[0] < first[0]) first = z.fadeOut;
+		last = Math.max(last, z.fadeOut[1]);
+	}
+	return { first, last };
+}
+
 export function installWorldMap(view: MapViewApi): boolean {
 	const m = view as unknown as Internals;
 	const art = m.zoneArt;
 	const world = m.index?.world;
 	if (!art || !Array.isArray(art.zones) || !(art.tex instanceof Map) || typeof art._load !== 'function' || typeof art._evict !== 'function') return false;
 	view.setLayer('zoneArt', true);
+	const fit = fitZones(art, m.index?.zones ?? {});
 	// There is always art behind the map: no fallback grid when the terrain is off at world scale.
 	if (m.grid) m.grid.draw = () => {};
 	if (world && installLayout(m, world)) {
@@ -194,8 +236,7 @@ export function installWorldMap(view: MapViewApi): boolean {
 	art.draw = function (f: Frame, quad: Quad): boolean {
 		const zonesIn = smooth(ZONES_IN, f.zoom);
 		const worldAlpha = 1 - smooth(WORLD_OUT, f.zoom);
-		const zoneAlpha = zonesIn * (1 - smooth(TERRAIN_IN, f.zoom));
-		if (worldAlpha <= 0.002 && zoneAlpha <= 0.002) return false;
+		if (worldAlpha <= 0.002 && (zonesIn <= 0.002 || f.zoom >= fit.last)) return false;
 		const gl = this.gl;
 		const frame = ++this.frame;
 		const offs = new Map(f.conts.map((k) => [String(k.c), k]));
@@ -203,15 +244,19 @@ export function installWorldMap(view: MapViewApi): boolean {
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		quad.begin(f);
 		let pending = false;
-		// The sea under the zone maps (only with Azeroth shown: the painting's continents laid out).
-		const seaAlpha = zoneAlpha;
+		// The sea under the zone maps (only with Azeroth shown: the painting's continents laid out),
+		// gone before the first zone map is: the terrain has to show under that one.
+		const seaAlpha = zonesIn * (1 - smooth(fit.first, f.zoom));
 		const o0 = offs.get('0');
 		if (sea && seaRect && seaAlpha > 0.002 && o0 && m.__dashMap === 'azeroth') quad.draw(sea, o0.ox - seaRect.o.ox, o0.oy - seaRect.o.oy, o0.ox - seaRect.o.ox + seaRect.w, o0.oy - seaRect.o.oy + seaRect.h, 0, 0, 1, 1, seaAlpha);
-		// The world first, then zones largest first; the zone under the view centre last, so it is whole.
+		// The world first, then zones largest first; the zone under the view centre after them, so it
+		// is whole; the insets last, over their zones.
 		const under = (z: Zone, o: { ox: number; oy: number }) => f.cx >= z.x0 + o.ox && f.cx <= z.x1 + o.ox && f.cy >= z.y0 + o.oy && f.cy <= z.y1 + o.oy;
-		const order = [...this.zones.filter((z) => offs.has(z.c) && (z.world || !under(z, offs.get(z.c)!))), ...this.zones.filter((z) => !z.world && offs.has(z.c) && under(z, offs.get(z.c)!))];
+		const rank = (z: Zone) => (z.world ? 0 : z.fadeIn ? 3 : under(z, offs.get(z.c)!) ? 2 : 1);
+		const shown = this.zones.filter((z) => offs.has(z.c));
+		const order = [0, 1, 2, 3].flatMap((r) => shown.filter((z) => rank(z) === r));
 		for (const z of order) {
-			const alpha = z.world ? worldAlpha : zoneAlpha;
+			const alpha = z.world ? worldAlpha : (z.fadeIn ? smooth(z.fadeIn, f.zoom) : zonesIn) * (1 - smooth(z.fadeOut ?? TERRAIN_IN, f.zoom));
 			if (alpha <= 0.002) continue;
 			const o = offs.get(z.c)!;
 			const x0 = z.x0 + o.ox, x1 = z.x1 + o.ox, y0 = z.y0 + o.oy, y1 = z.y1 + o.oy;

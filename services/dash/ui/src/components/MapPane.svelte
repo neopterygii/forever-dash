@@ -82,6 +82,8 @@
 				view.on('pick', ({ sx, sy }) => act(overlay?.hit(sx, sy) ?? null));
 				overlay = new TrailOverlay(overlayCanvas, view);
 				map = view;
+				// For scripts that check the map (tools/map-check.cjs): the view, to move it.
+				(window as unknown as { __dashView?: MapViewApi }).__dashView = view;
 			})
 			.catch(() => (noGL = true));
 		return () => {
