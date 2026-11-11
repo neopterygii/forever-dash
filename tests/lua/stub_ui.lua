@@ -282,6 +282,14 @@ end
 
 uistub.skipped = {} -- step index -> true: the step view says `skipped`
 
+-- A goal's line as the Engine writes it: a quest in the client's quote marks
+-- ("Accept “A Threat Within”", Polestar.Quoted).
+local function goalLine(goal)
+	local subject = goal.subject or ""
+	if goal.subjectKind == "quest" then subject = Polestar.Quoted(subject) end
+	return (goal.verb or "") .. " " .. subject
+end
+
 local function view(i)
 	local step = guide.steps[i]
 	local goals = {}
@@ -289,7 +297,7 @@ local function view(i)
 		local v = {}
 		for k, val in pairs(goal) do v[k] = val end
 		v.index = g
-		v.text = goal.text or ((goal.verb or "") .. " " .. (goal.subject or ""))
+		v.text = goal.text or goalLine(goal)
 		v.manual = goal.manual and true or false
 		v.optional = goal.optional and true or false
 		-- Every goal but a note ticks (Engine.ToggleGoal).
@@ -479,6 +487,8 @@ function Engine.GetAlong()
 	end
 	return out
 end
+-- "While you're here" (Engine.GetWhileHereList): nothing close by in the UI stub.
+function Engine.GetWhileHereList() return {} end
 local function move(i)
 	current = i
 	uistub.aim = nil
@@ -574,7 +584,7 @@ function Engine.AimGoal(s, g)
 	return true
 end
 local function waypointOf(g, goal)
-	return { map = goal.map, x = goal.x, y = goal.y, f = goal.f, label = goal.verb .. " " .. goal.subject, stepIndex = current, goalIndex = g, kind = goal.t, r = 8 }
+	return { map = goal.map, x = goal.x, y = goal.y, f = goal.f, label = goalLine(goal), stepIndex = current, goalIndex = g, kind = goal.t, r = 8 }
 end
 function Engine.GetWaypoint()
 	if not (guide and current) then return nil end
@@ -661,6 +671,7 @@ function Guides.SuggestSource() return "guides" end
 -- Whether a character can follow a guide, and another race's starting zone
 -- they may still follow: the real registry's rules.
 function Guides.GuideMatches(g, player) return uistub.realGuides.GuideMatches(g, player) end
+function Guides.Matches(only, player) return uistub.realGuides.Matches(only, player) end
 function Guides.OtherStart(g, player) return uistub.realGuides.OtherStart(g, player) end
 
 local Nav = {}
@@ -669,6 +680,7 @@ function Nav.SetTarget(map, x, y, label, f, stop, z)
 	-- `stop` and `z` sit after a nil `f` for most callers, so they are kept here, not in the call record.
 	uistub.target = { map = map, x = x, y = y, label = label, f = f, stop = stop, z = z }
 	Polestar.Fire("WAYPOINT_CHANGED", uistub.target)
+	return uistub.target
 end
 function Nav.ClearTarget() record("ClearTarget"); uistub.target = nil end
 -- Drops a point picked by hand: the Engine's waypoint is the target again.
@@ -759,11 +771,12 @@ function uistub.install(opts)
 	if Polestar.GetDefault("behavior.autoAccept") == nil then
 		Polestar.RegisterDefaults("behavior", { autoAccept = true, autoTurnin = true, guideEnd = "ask", autoSelectGuide = true, skipGrey = false, offerClassQuests = true, groupQuests = "ask" })
 	end
-	-- An account and a character that have seen the welcome, so it never
-	-- opens over windows under test; tests/ui-welcome.test.js restores the
-	-- saved values.
+	-- An account and a character that have seen the welcome and the newest
+	-- notes, so neither opens over windows under test; ui-welcome.rs and
+	-- ui-whatsnew.rs restore the saved values.
 	Polestar.DB().welcomeSeen = 1
 	Polestar.CharState().welcomeSeen = 1
+	Polestar.DB().whatsNewSeen = Polestar.UI.WhatsNew and Polestar.UI.WhatsNew.LATEST or nil
 end
 
 -- Show guide `id` at step `step` in the active tab (opening a first tab).

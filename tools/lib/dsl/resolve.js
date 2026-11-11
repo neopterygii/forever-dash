@@ -844,10 +844,26 @@ function resolveGuide(ast, data, diag, opts = {}) {
 		}
 		guide.steps.push(step);
 	}
-	// The guide menu's "Group" chip: some goal of the route needs a group.
-	if (guide.steps.some((s) => s.goals.some((goal) => goal.group && !goal.optional))) guide.group = true;
+	// The guide menu's "Group" chip (#1358): some goal on the route every player follows needs a group:
+	// not an `optional` one, not one in a step only the group way follows (`when group`, `when dungeon`)
+	// or of a quest accepted only in one, not a dungeon or raid quest's turn-in (the run was the group
+	// content).
+	const optIn = (s) => (s.when || []).some((p) => !p.neg && (p.k === 'group' || p.k === 'dungeon'));
+	const onlyOptIn = new Map();
+	for (const s of guide.steps) {
+		for (const goal of s.goals) {
+			if (goal.t === 'accept' && goal.quest !== undefined) onlyOptIn.set(goal.quest, onlyOptIn.get(goal.quest) !== false && optIn(s));
+		}
+	}
+	const needs = (goal) =>
+		goal.group &&
+		!goal.optional &&
+		!(goal.quest !== undefined && onlyOptIn.get(goal.quest) === true) &&
+		!(goal.t === 'turnin' && (goal.group.kind === 'dungeon' || goal.group.kind === 'raid'));
+	if (guide.steps.some((s) => !optIn(s) && s.goals.some(needs))) guide.group = true;
 	checkLabels(ast.steps, err);
 	checkAlongGoals(guide.steps, warn);
+	checkBackground(ast.steps, guide.steps, err);
 	return guide;
 }
 
@@ -901,6 +917,34 @@ function checkAlongGoals(steps, warn) {
 			warn(goal._line, `${what} in an \`along\` step never checks off: Polestar checks it only on the step the route is on, so it stays listed${typeof step.along === 'string' ? ` until the step labelled ${step.along}` : ''}`, 'put it in a step of its own, or track something the game counts (a quest objective, a bag count)');
 		}
 	}
+}
+
+// `background` (#1135) marks an `along until` step of zone-wide, slow goals:
+// each quest objective in it needs a finish step before the step that hands
+// its quest in (a later step, not an along one, working the same objective).
+// Mirrors forge-guide's resolve.rs check_background.
+function checkBackground(steps, compiled, err) {
+	steps.forEach((s, i) => {
+		if (!s.background) return;
+		if (typeof s.along !== 'string') {
+			err(s.backgroundLine, '`background` goes on an `along until <label>` step', 'add `along until <label>`, the label on the step that hands the quest in');
+			return;
+		}
+		const step = compiled[i];
+		if (!step) return;
+		for (const goal of step.goals) {
+			if (!['kill', 'collect', 'interact', 'use'].includes(goal.t) || goal.quest === undefined || goal.oi === undefined) continue;
+			let handIn = -1;
+			for (let k = i + 1; k < compiled.length && handIn < 0; k++) {
+				if (compiled[k].goals.some((g) => g.t === 'turnin' && g.quest === goal.quest)) handIn = k;
+			}
+			if (handIn < 0) continue;
+			const finished = compiled.slice(i + 1, handIn).some((st) => !st.along && st.goals.some((g) => g.t === goal.t && g.quest === goal.quest && g.oi === goal.oi));
+			if (!finished) {
+				err(goal._line, `background goal for quest ${goal.quest}.${goal.oi} has no finish step before its hand-in (line ${compiled[handIn]._line})`, 'add a step that works it, at the densest spot, right before the step that hands the quest in');
+			}
+		}
+	});
 }
 
 // What an accept of quest `id` (record `q`, or null) waits on, for the
@@ -1454,6 +1498,8 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 					.map((t) => ({ npc: t.id, classes: t.classes.filter((c) => set.classes.includes(c)) }))
 					.filter((e) => e.classes.length);
 				smart(goal, entries, `class trainer`);
+				// The step's zone: the Engine ranks its trainers first wherever the player stands (#1357).
+				if (ctx.zoneId != null && goal.candidates) goal.zone = ctx.zoneId;
 			}
 			if (g.nearest && v === 'sethome') smart(goal, data.npcsWithRole('innkeeper').map((id) => ({ npc: id })), 'innkeeper');
 			// A located `sethome` naming no npc: its inn's innkeeper, for the
@@ -1529,6 +1575,13 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 		case 'level':
 			goal.level = g.level;
 			if (g.frac) goal.frac = g.frac;
+			// `grind <npc>`: the mob's spawn areas place the goal (below), so the
+			// arrow leads to the nearest of them; without spawns, the step's goto.
+			if (g.grind !== undefined) {
+				goal.grind = g.grind;
+				setIf(goal, 'npcName', optionalName('npc', g.grind));
+				candidates = [{ kind: 'npc', id: g.grind }];
+			}
 			break;
 		case 'money':
 			goal.money = g.money;
@@ -1679,8 +1732,11 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 		if (q && Array.isArray(q.objectives)) {
 			// "7.1 = kill Kobold Vermin x10, 7.2 = ...": what `quest Q.O` can name.
 			const listed = () => data.questObjectives(g.quest).map((o) => objectiveLabel(g.quest, o)).join(', ');
+			// An index past a list the data has names no quest-log line: the goal
+			// never counts. An error; with no list in the data (a quest whose
+			// objectives it does not know) only a warning.
 			if (oi !== undefined && oi > q.objectives.length) {
-				warn(
+				(q.objectives.length ? err : warn)(
 					ln,
 					`quest ${g.quest} has ${q.objectives.length} objective(s) in data, not ${oi}${q.objectives.length ? `: ${listed()}` : ''}`,
 					q.objectives.length ? `write \`quest ${g.quest}.<n>\` with one of these (\`polestar find ${g.quest}\` lists them)` : `drop the \`.${oi}\`: write \`quest ${g.quest}\``,
@@ -1695,29 +1751,31 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 			const other = v === 'talk' ? 'kill' : v === 'kill' ? 'talk' : null;
 			const sameKind = (k) => k === kind || (other !== null && k === other);
 			const find = (id) => objectiveFor(q, kind, id) || (other !== null ? objectiveFor(q, other, id) : null);
-			// `quest Q.O` naming an objective of the same kind for another
-			// target: progress and count would follow that one. When the target
-			// is another objective of the quest, the index is swapped, which is
-			// always wrong: an error (#214 shipped two that a warning let pass).
-			// An item the quest uses without counting it (Sunscale Feather on the
-			// Scytheclaw nests, the Fresh Zhevra Carcass that lures Ishamuhale,
-			// #538): no line of the quest log counts it, so only the bags can say
-			// it is there.
+			// `quest Q.O` naming another objective than the line's own target:
+			// progress and count would follow that one. When the target is
+			// another objective of the quest, the index is swapped, which is
+			// always wrong, whatever kind the named objective is (a kill written
+			// on an item's line): an error (#214 shipped two that a warning let
+			// pass). Another target of the same kind that is no objective: a
+			// warning. An item the quest uses without counting it (Sunscale
+			// Feather on the Scytheclaw nests, the Fresh Zhevra Carcass that
+			// lures Ishamuhale, #538): no line of the quest log counts it, so only
+			// the bags can say it is there.
 			const used = v === 'collect' && id !== undefined && ((q.requiredItems || []).includes(id) || q.sourceItem === id);
 			const bagHint = `the quest uses item ${id} without counting it: drop \`quest ${g.quest}${oi !== undefined ? `.${oi}` : ''}\` so the step counts it in the bags`;
 			const named = oi !== undefined && kind && id !== undefined ? data.questObjectives(g.quest)[oi - 1] : null;
-			if (named && sameKind(named.kind) && named.id != null && named.id !== id) {
-				const right = find(id);
+			const right = named ? find(id) : null;
+			const swapped = !!right && right !== oi;
+			if (swapped || (named && sameKind(named.kind) && named.id != null && named.id !== id)) {
 				const own = right ? data.questObjectives(g.quest)[right - 1] : null;
-				(right ? err : warn)(
+				(swapped ? err : warn)(
 					ln,
 					`${objectiveLabel(g.quest, named).replace(/^(\S+) = /, 'quest $1 is ')}, not this ${noun}${own ? `; ${own.name || `${noun} ${id}`} is ${g.quest}.${right}` : ''}`,
 					right ? `write \`quest ${g.quest}.${right}\`, or \`quest ${g.quest}\` to take the index from the ${noun}` : used ? bagHint : `its objectives: ${listed()}`,
 				);
 			}
-			if (named && v === 'collect' && named.kind !== 'item') {
-				const right = objectiveFor(q, 'item', id);
-				warn(ln, `${objectiveLabel(g.quest, named).replace(/^(\S+) = /, 'quest $1 is ')}, not an item`, right ? `write \`quest ${g.quest}.${right}\`, or \`quest ${g.quest}\` to take the index from the item` : used ? bagHint : `its objectives: ${listed()}`);
+			if (named && !swapped && v === 'collect' && named.kind !== 'item') {
+				warn(ln, `${objectiveLabel(g.quest, named).replace(/^(\S+) = /, 'quest $1 is ')}, not an item`, used ? bagHint : `its objectives: ${listed()}`);
 			}
 			if (oi === undefined) {
 				if (id !== undefined) oi = find(id) || undefined;
@@ -1813,11 +1871,14 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 		// the arrow led can move it on to the others (spawnSpots). Kill,
 		// collect and interact goals may be area objectives (`spread`, searched
 		// spot by spot); the others go to the nearest place.
-		const area = v === 'kill' || v === 'collect' || v === 'interact';
+		const area = v === 'kill' || v === 'collect' || v === 'interact' || goal.grind !== undefined;
 		if (!g.explicitCoords && picked.x !== undefined) {
 			const sp = spawnSpots(data, area ? picked.sources || [c] : [c], picked.map, picked.f, picked.x, picked.y, area ? picked.elites : undefined);
 			if (sp) {
-				goal.spots = sp.spots;
+				// A grind keeps its mob's places the arrow picks, not the alternatives (other places it spawns, walked
+				// by hand for a quest target): any of the mob will do, and a grind's spots cost memory (#1392).
+				const kept = goal.grind !== undefined ? sp.spots.filter((s) => !s.alt) : sp.spots;
+				goal.spots = kept.length ? kept : sp.spots;
 				if (sp.spread && area) goal.spread = true;
 				if (sp.at) {
 					goal.x = sp.at.x;
@@ -1881,6 +1942,7 @@ function resolveGoal(g, zoneMap, prev, data, err, warn, ctx = { sides: ['Allianc
 	if ((v === 'kill' || v === 'collect' || v === 'interact' || v === 'use') && goal.x === undefined && !goal.candidates && !g.nearest && !(ctx.loop && LOOP_VERBS.has(v))) {
 		warn(ln, `\`${v}\` has no coordinates (no known spawns; add @x,y)`, 'add @x,y where the player finds the target (the map coordinates the game shows), so the arrow can lead there');
 	}
+	if (goal.grind !== undefined && goal.x === undefined) warn(ln, `\`grind ${goal.grind}\` has no known spawns here: the arrow keeps the step's goto`);
 	return goal;
 }
 

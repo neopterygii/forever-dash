@@ -239,7 +239,7 @@ impl Engine {
 		}
 		let mut file = DashFile::load(&self.store.dir);
 		let before = file.clone();
-		let result = sync_once(&self.http, &settings.dash_url, &settings.dash_token, &work, &mut file).await;
+		let result = sync_once(&self.http(), &settings.dash_url, &settings.dash_token, &work, &mut file).await;
 		if file != before {
 			if let Err(e) = file.save(&self.store.dir) {
 				eprintln!("could not save {FILE}: {e}");
@@ -266,13 +266,13 @@ impl Engine {
 		}
 		// Ack.lua: what every enabled destination has.
 		if let Some(dir) = addon_dir {
-			let share = crate::engine::sharing(&settings);
+			let flags = crate::engine::ack_flags(&settings);
 			for (install, st) in &file.installs {
 				let upstream_acked = upstream.get(install).map_or(0, |p| p.acked);
 				let level = ack_level(settings.consent, upstream_acked, Some(st.acked));
 				let current = ack::read(&dir).get(install).copied().unwrap_or(0);
 				if level > current {
-					if let Err(e) = ack::write(&dir, install, level, share) {
+					if let Err(e) = ack::write(&dir, install, level, flags) {
 						eprintln!("could not write Ack.lua: {e}");
 					}
 				}

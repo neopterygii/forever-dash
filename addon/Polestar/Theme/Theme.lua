@@ -700,6 +700,21 @@ function Theme.Legible(r, g, b)
 	return liftTo(lightestOf(pal), pal.text, { r, g, b })
 end
 
+-- A ground tinted by the accent: `share` of the accent mixed into the
+-- palette's window ground (bg), less where the text would no longer read at
+-- 7:1 on it (a bright accent on a light skin). Follows the accent: call it
+-- from a painter. -> r, g, b, a (the ground's alpha)
+function Theme.AccentGround(share)
+	local pal = Theme.Palette()
+	local g, a, t = pal.bg, pal.accent, pal.text
+	local k = share
+	while true do
+		local c = { g[1] + (a[1] - g[1]) * k, g[2] + (a[2] - g[2]) * k, g[3] + (a[3] - g[3]) * k }
+		if k <= 0 or Theme.Contrast(t, c) >= 7 then return c[1], c[2], c[3], g[4] or 1 end
+		k = math.max(0, k - 0.02)
+	end
+end
+
 -- The window border: shown (ui.border), and its thickness in physical
 -- pixels (ui.borderSize, 1-4). Its colour is the "windowBorder" token.
 -- -> shown, size
@@ -1694,6 +1709,35 @@ function Theme.Refresh()
 		local ok, err = pcall(handlers[i])
 		if not ok and geterrorhandler then geterrorhandler()(err) end
 	end
+end
+
+-- A window's strings, set again a frame after it shows or changes scale. On a
+-- fresh client start (never after /reload) Forever drew some of a window's
+-- first strings blank, in a font another addon handed over too (the hub's
+-- rail labels and a guide's faction chip in EllesmereUI's font), and kept
+-- them blank: setting the same text again changes nothing, so only new text
+-- brought them back. The set in a later frame does (as the hand-over's above).
+local retextFrames = {}
+local function within(region, frame)
+	local p = region:GetParent()
+	while p do
+		if p == frame then return true end
+		p = p:GetParent()
+	end
+	return false
+end
+function Theme.RetextLater(frame)
+	if type(frame) ~= "table" or not (C_Timer and C_Timer.After) then return end
+	if retextFrames[frame] then return end
+	retextFrames[frame] = true
+	ns.After(0, function()
+		retextFrames[frame] = nil
+		if not frame:IsVisible() then return end
+		for fs in pairs(fonted) do
+			-- Font strings only: an edit box's text set again would run its search.
+			if fs:GetObjectType() == "FontString" and fs:IsVisible() and within(fs, frame) then textAgain(fs) end
+		end
+	end)
 end
 
 local LOOKS = {

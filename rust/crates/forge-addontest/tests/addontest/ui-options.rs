@@ -122,6 +122,21 @@ const SHOW: &str = r#"
 			nav = navLabels() })"#;
 
 #[test]
+fn integrations_lists_spoken_with_its_wait_off_only_while_spoken_quests_is_there() {
+	let script = r#"
+		UI.ShowOptions("integrations")
+		local headers = {}
+		for _, h in ipairs(O.view.headers) do if h:IsShown() then headers[#headers + 1] = h.Text:GetText() end end
+		local c = O.Controls("integrations")
+		local function shown(key) return c[key] ~= nil and c[key]:IsShown() or false end
+		emit({ headers = headers, toggle = shown("behavior.spokenDelay"), on = Polestar.Get("behavior.spokenDelay") })"#;
+	let without = run(script);
+	assert_eq!(without["toggle"], false);
+	let with = run(&format!("stub.addonsLoaded.Spoken_Quests = true\n{script}"));
+	assert_eq!(with, json!({ "headers": ["Spoken"], "toggle": true, "on": true }));
+}
+
+#[test]
 fn integrations_lists_questie_only_when_it_is_installed_or_loaded_else_says_none_is() {
 	let none = run(SHOW);
 	assert_eq!(none["title"], "Integrations");
@@ -879,8 +894,9 @@ fn distances_the_arrow_row_picks_yards_or_metres_right_click_restores_yards() {
 	assert_eq!(out, json!({ "before": "Yards (the game's unit)", "picked": "metres", "label": "Metres", "reset": "yards" }));
 }
 
+// Tangens (Discord): healing in Wailing Caverns, the window was in the way all run and the setting hard to find.
 #[test]
-fn guide_window_in_dungeons_keeps_the_window_or_hides_it_in_dungeons_and_raids_right_click_restores_keep_visible() {
+fn guide_window_in_dungeons_and_battlegrounds_hides_by_default_keep_visible_is_a_pick_right_click_restores_hide_and_search_finds_it() {
 	let out = run(r#"
 		UI.ShowOptions("guide")
 		local row = O.Controls("guide")["ui.instance"]
@@ -888,11 +904,20 @@ fn guide_window_in_dungeons_keeps_the_window_or_hides_it_in_dungeons_and_raids_r
 		row.Button:Click()
 		local choices = {}
 		for _, r in ipairs(PolestarMenu.rows) do if r:IsShown() then choices[#choices + 1] = r.Text:GetText() end end
-		for _, r in ipairs(PolestarMenu.rows) do if r:IsShown() and r.Text:GetText() == "Hide" then r:Click() end end
+		for _, r in ipairs(PolestarMenu.rows) do if r:IsShown() and r.Text:GetText() == "Keep visible" then r:Click() end end
 		local picked = Polestar.Get("ui.instance")
 		row:Click("RightButton")
-		emit({ label = row.Label:GetText(), before = before, choices = choices, picked = picked, reset = Polestar.Get("ui.instance") })"#);
-	assert_eq!(out, json!({ "label": "In dungeons", "before": "Keep visible", "choices": ["Keep visible", "Hide"], "picked": "hide", "reset": "show" }));
+		local found = {}
+		for _, q in ipairs({ "dungeon", "raid", "battleground", "arena", "instance", "hide" }) do
+			found[q] = false
+			for _, g in ipairs((O.Search(q))) do for _, c in ipairs(g.controls) do if c.key == "ui.instance" then found[q] = true end end end
+		end
+		emit({ label = row.Label:GetText(), before = before, choices = choices, picked = picked, reset = Polestar.Get("ui.instance"), found = found })"#);
+	assert_eq!(
+		out,
+		json!({ "label": "In dungeons and battlegrounds", "before": "Hide", "choices": ["Keep visible", "Hide"], "picked": "show", "reset": "hide",
+			"found": { "dungeon": true, "raid": true, "battleground": true, "arena": true, "instance": true, "hide": true } })
+	);
 }
 
 // Discovery, Dungeons: which dungeons the leveling guides' `when dungeon` steps take this character through
@@ -1148,7 +1173,7 @@ fn search_forgives_joined_words_typos_prefixes_and_synonyms_and_puts_the_best_ma
 #[test]
 fn search_on_a_german_client_matches_german_labels_and_the_english_terms_and_label() {
 	let out = run_mods(
-		"function GetLocale() return \"deDE\" end",
+		&format!("function GetLocale() return \"deDE\" end\n{}", forge_addontest::shipped_strings("deDE")),
 		r#"emit({ german = top("Plündern"), noAccent = top("plundern"), term = top("autoloot"), english = top("faster auto loot"), stone = top("ruhestein button") })"#,
 	);
 	for q in ["german", "noAccent", "term", "english"] {
@@ -1162,7 +1187,7 @@ fn search_on_a_german_client_matches_german_labels_and_the_english_terms_and_lab
 #[test]
 fn search_finds_single_non_ascii_characters_inside_translated_labels() {
 	for (locale, query, expected) in [("zhCN", "图", "maps.minimapButton"), ("zhTW", "圖", "maps.minimapButton"), ("koKR", "템", "qol.itemButton"), ("ruRU", "ш", "nav.arrowScale")] {
-		let out = run_mods(&format!("function GetLocale() return \"{locale}\" end"), &format!("emit(keys(\"{query}\"))"));
+		let out = run_mods(&format!("function GetLocale() return \"{locale}\" end\n{}", forge_addontest::shipped_strings(locale)), &format!("emit(keys(\"{query}\"))"));
 		assert!(out.as_array().is_some_and(|keys| keys.iter().any(|key| key.as_str() == Some(expected))), "{locale}: {query:?} did not find {expected}: {out}");
 	}
 }
@@ -1210,4 +1235,36 @@ fn search_with_no_match_suggests_the_nearest_settings() {
 	assert!(includes(&out["suggestions"], "Hearthstone button"), "{s:?}");
 	assert_eq!(out["nothing"]["n"], 0);
 	assert_eq!(out["nothing"]["suggestions"], json!({}), "nothing near: no suggestion (an empty list)");
+}
+
+// Fitz, 0.3.5 preview: "Version 0.3.5-preview.2f100bfb3" ran under the Discord mark, and the BETA chip after it
+// sat on the footer's "Reset page". The version line and its chip stay left of the mark; a version too long for
+// "Version " drops the word, then is cut.
+#[test]
+fn the_version_line_and_its_stage_chip_end_before_the_discord_mark_in_both_windows_a_long_version_drops_the_word_then_is_cut() {
+	let out = run(r#"
+		local function foot(f)
+			local st, mark = f.Status, f.Discord
+			local _, _, _, sx = st:GetPoint(1)
+			local _, _, _, mx = mark:GetPoint(1)
+			return { text = st:GetText(), right = sx + st:GetStringWidth(), chip = f.Stage:IsShown() and f.Stage:GetWidth() or 0,
+				markLeft = f.psSidebar + mx - mark:GetWidth() }
+		end
+		Polestar.version = "0.3.5"
+		UI.ShowOptions()
+		local short = foot(PolestarOptions)
+		PolestarOptions:Hide()
+		Polestar.version = "0.3.5-preview.2f100bfb3"
+		UI.ShowOptions()
+		local preview = foot(PolestarOptions)
+		UI.ShowPicker()
+		emit({ short = short, preview = preview, hub = foot(PolestarPicker) })"#);
+	assert_eq!(out["short"]["text"], "Version 0.3.5");
+	assert_eq!(out["preview"]["text"], "0.3.5-preview.2f100bfb3", "too long with the word: the number alone");
+	for key in ["short", "preview", "hub"] {
+		let f = &out[key];
+		assert!(n(&f["chip"]) > 0.0, "{key}: the BETA chip shows");
+		let end = n(&f["right"]) + 8.0 + n(&f["chip"]);
+		assert!(end <= n(&f["markLeft"]), "{key}: the line and its chip end at {end}, the Discord mark starts at {}", f["markLeft"]);
+	}
 }

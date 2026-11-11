@@ -14,8 +14,10 @@
 --      and Reputation rows with their counts (every guide);
 --   2. setup: quest automation (behavior.autoAccept and autoTurnin as one
 --      switch) and the guide at login (behavior.autoSelectGuide), each with
---      its description inline, and the colour scheme (ui.scheme) as preview
---      cards in each scheme's own colours, that apply live; Skip keeps them;
+--      its description inline, the colour scheme (ui.scheme) as preview
+--      cards in each scheme's own colours, and the route line's look
+--      (nav.lineStyle: Line, Dots, Sparkles) as cards each previewing it,
+--      that apply live; Skip keeps them;
 --   3. route: the start zone's painting with the suggested guide's first
 --      walk drawn on it and its place named, then the route style
 --      (nav.routeStyle, the setting Options' Route style dropdown writes) as
@@ -882,12 +884,188 @@ local function schemeCard(p)
 	return c
 end
 
+-- The route line's look (nav.lineStyle, Maps/RouteLines.lua): a card per
+-- style with a small preview of it on a dark ground, along one gentle path
+-- from the player's mark to the goal's; a click applies it, right-click puts
+-- the default (the line) back. The sparkles' preview drifts toward the goal
+-- only while it shows (its OnUpdate, 20 times a second, moves the textures
+-- it made once), and holds still under ui.reduceMotion, as the maps then
+-- draw dots.
+local LOOK_PATH = { 0.07, 0.74, 0.22, 0.52, 0.38, 0.44, 0.54, 0.58, 0.7, 0.62, 0.84, 0.42, 0.93, 0.28 } -- x, y fractions
+local LOOK_POINTS = #LOOK_PATH / 2
+local LOOK_DOT_GAP, LOOK_SPARKLES, LOOK_FLOW, LOOK_TICK = 8, 6, 10, 1 / 20
+local NAV_MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\Nav\\"
+
+-- A preview path point in the card's ground, from its top left.
+local function lookPoint(c, i)
+	return LOOK_PATH[i * 2 - 1] * c.psW, LOOK_PATH[i * 2] * PREVIEW_H
+end
+
+-- The point `d` px along the preview path, and the path's length.
+local function lookAlong(c, d)
+	local ax, ay = lookPoint(c, 1)
+	for i = 2, LOOK_POINTS do
+		local bx, by = lookPoint(c, i)
+		local len = sqrt((bx - ax) ^ 2 + (by - ay) ^ 2)
+		if d <= len then
+			local t = len > 0 and d / len or 0
+			return ax + (bx - ax) * t, ay + (by - ay) * t
+		end
+		d = d - len
+		ax, ay = bx, by
+	end
+	return ax, ay
+end
+
+local function lookLength(c)
+	local total = 0
+	local ax, ay = lookPoint(c, 1)
+	for i = 2, LOOK_POINTS do
+		local bx, by = lookPoint(c, i)
+		total = total + sqrt((bx - ax) ^ 2 + (by - ay) ^ 2)
+		ax, ay = bx, by
+	end
+	return total
+end
+
+-- The route's colour: Dot colour's when one is set, else the arrow's (the accent).
+local function routeColour()
+	local R = ns.RouteLines
+	local tint = R and R.DOT_COLORS and R.DOT_COLORS[ns.Get("nav.dotColor")]
+	if tint then return tint[1], tint[2], tint[3] end
+	local r, g, b = Theme.Color("arrow")
+	return r, g, b
+end
+
+local function centre(t, c, x, y)
+	t:ClearAllPoints()
+	t:SetPoint("CENTER", c.Look, "TOPLEFT", x, -y)
+end
+
+-- The sparkles' preview: each sparkle a spacing apart, flowing toward the goal and twinkling.
+local function drawSparkles(c, now)
+	local still = Anim and Anim.Reduced and Anim.Reduced()
+	local spacing = c.psLength / LOOK_SPARKLES
+	local shift = still and spacing / 2 or (now * LOOK_FLOW) % spacing
+	for k, t in ipairs(c.Marks) do
+		local x, y = lookAlong(c, (k - 1) * spacing + shift)
+		centre(t, c, x, y)
+		t:SetAlpha(still and 0.85 or 0.55 + 0.45 * sin(now * 3 + k * 1.7))
+	end
+end
+
+local function lookTick(self, elapsed)
+	local c = self:GetParent()
+	c.psElapsed = (c.psElapsed or 0) + elapsed
+	if c.psElapsed < LOOK_TICK then return end
+	c.psElapsed = 0
+	drawSparkles(c, GetTime and GetTime() or 0)
+end
+
+local function lookCard(p, style)
+	local c = CreateFrame("Button", nil, p)
+	W.Hover(c)
+	outline(c)
+	c.psStyle = style
+	c.Look = CreateFrame("Frame", nil, c)
+	c.Look:SetPoint("TOPLEFT", c, "TOPLEFT", 5, -5)
+	c.Look:SetPoint("TOPRIGHT", c, "TOPRIGHT", -5, -5)
+	c.Look:SetHeight(PREVIEW_H)
+	c.Ground = solid(c.Look, "BACKGROUND", 0)
+	c.Ground:SetAllPoints(c.Look)
+	c.Marks, c.Shadows = {}, {}
+	if style == "line" then
+		for i = 1, LOOK_POINTS - 1 do
+			c.Shadows[i] = c.Look:CreateLine(nil, "ARTWORK", nil, 0)
+			c.Shadows[i]:SetTexture(NAV_MEDIA .. "line-soft")
+			c.Shadows[i]:SetThickness(9)
+			c.Marks[i] = c.Look:CreateLine(nil, "ARTWORK", nil, 1)
+			c.Marks[i]:SetColorTexture(1, 1, 1, 1)
+			c.Marks[i]:SetThickness(3)
+		end
+	elseif style == "sparkle" then
+		for i = 1, LOOK_SPARKLES do
+			local t = c.Look:CreateTexture(nil, "ARTWORK", nil, 1)
+			t:SetTexture(NAV_MEDIA .. "sparkle")
+			t:SetBlendMode("ADD")
+			t:SetSize(12, 12)
+			c.Marks[i] = t
+		end
+		c.Look:SetScript("OnUpdate", lookTick)
+	end
+	c.Start = W.Tex(c.Look, "OVERLAY", "circle", nil, 0)
+	c.Start:SetSize(7, 7)
+	c.Goal = W.Tex(c.Look, "OVERLAY", "circle", nil, 0)
+	c.Goal:SetSize(10, 10)
+	c.Name = W.Text(c, "label", "textDim")
+	c.Name:SetPoint("TOPLEFT", c.Look, "BOTTOMLEFT", 3, 0)
+	c.Name:SetPoint("TOPRIGHT", c.Look, "BOTTOMRIGHT", -3, 0)
+	c.Name:SetHeight(SCHEME_NAME_H)
+	c.Name:SetJustifyH("LEFT")
+	c.Name:SetWordWrap(false)
+	c:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	c:SetScript("OnClick", function(self, button)
+		if button == "RightButton" then ns.Set("nav.lineStyle", nil) else ns.Set("nav.lineStyle", self.psStyle) end
+	end)
+	return c
+end
+
+-- The preview drawn for the card's width, in the theme's and the route's colours.
+local function paintLook(c)
+	if not c.psW then return end
+	local r, g, b = routeColour()
+	local s1, s2, s3 = Theme.Color("scrim")
+	c.Ground:SetVertexColor(Theme.Color("sidebar"))
+	if c.psStyle == "line" then
+		for i = 1, LOOK_POINTS - 1 do
+			local ax, ay = lookPoint(c, i)
+			local bx, by = lookPoint(c, i + 1)
+			c.Shadows[i]:SetStartPoint("TOPLEFT", c.Look, ax, -ay)
+			c.Shadows[i]:SetEndPoint("TOPLEFT", c.Look, bx, -by)
+			c.Marks[i]:SetStartPoint("TOPLEFT", c.Look, ax, -ay)
+			c.Marks[i]:SetEndPoint("TOPLEFT", c.Look, bx, -by)
+			c.Shadows[i]:SetVertexColor(s1, s2, s3, 0.75)
+			c.Marks[i]:SetVertexColor(r, g, b, 1)
+		end
+	elseif c.psStyle == "dots" then
+		local n = floor(c.psLength / LOOK_DOT_GAP) + 1
+		for i = 1, n do
+			local t = c.Marks[i]
+			if not t then
+				t = W.Tex(c.Look, "ARTWORK", "circle", nil, 1)
+				t:SetSize(4, 4)
+				c.Marks[i] = t
+			end
+			centre(t, c, lookAlong(c, (i - 1) * LOOK_DOT_GAP))
+			t:SetVertexColor(r, g, b, 1)
+			t:Show()
+		end
+		for i = n + 1, #c.Marks do c.Marks[i]:Hide() end
+	else
+		for _, t in ipairs(c.Marks) do t:SetVertexColor(r, g, b, 1) end
+		drawSparkles(c, GetTime and GetTime() or 0)
+	end
+	centre(c.Start, c, lookPoint(c, 1))
+	c.Start:SetVertexColor(Theme.Color("text"))
+	centre(c.Goal, c, lookPoint(c, LOOK_POINTS))
+	c.Goal:SetVertexColor(Theme.Accent())
+	local on = ns.Get("nav.lineStyle") == c.psStyle
+	c.psSelected = on
+	if on then
+		local ar, ag, ab = Theme.Accent()
+		paintOutline(c, ar, ag, ab, 1)
+	else
+		paintOutline(c, Theme.Wash("border"))
+	end
+	W.Color(c.Name, on and "text" or "textDim")
+end
+
 PAGES[#PAGES + 1] = {
 	key = "setup",
 	shown = function() return full end,
 	build = function(P)
 		compactHero(P.Hero, L["Make it yours"],
-			(L["Three choices to start with. Everything else is in %s."]):format(cmd("/polestar options")), true)
+			(L["A few choices to start with. Everything else is in %s."]):format(cmd("/polestar options")), true)
 		local p = P.Body
 		F.AutoQuest = toggleRow(p, L["Accept and turn in guide quests for me"], "behavior.autoAccept",
 			L["Only quests in the next steps of your open guides. Never picks between rewards. Hold Shift to skip."],
@@ -901,6 +1079,20 @@ PAGES[#PAGES + 1] = {
 		p.Keep = para(p, "note", "textMuted", CW, 3)
 		p.Keep:SetText(L["Skip keeps these as they are."])
 		F.Schemes = {}
+		-- The route line's look, with the route lines (Maps/RouteLines.lua).
+		F.Looks = {}
+		local R = ns.RouteLines
+		if R and R.STYLE_CHOICES then
+			p.LookTitle = para(p, "body", "text", CW, 2)
+			p.LookTitle:SetText(L["Route line"])
+			p.LookNote = para(p, "note", "textMuted", CW, 3)
+			p.LookNote:SetText(L["How the way to your goal shows on the world map and the minimap. The line is the easiest to follow; sparkles show as dots while Reduce motion is on."])
+			for i, ch in ipairs(R.STYLE_CHOICES) do
+				local c = lookCard(p, ch.value)
+				c.Name:SetText(ch.label)
+				F.Looks[i] = c
+			end
+		end
 	end,
 	layout = function(P)
 		local heroH = layoutCompactHero(P.Hero)
@@ -939,6 +1131,27 @@ PAGES[#PAGES + 1] = {
 		end
 		for i = n + 1, #F.Schemes do F.Schemes[i]:Hide() end
 		y = y + 5 + PREVIEW_H + SCHEME_NAME_H + 14
+		if #F.Looks > 0 then
+			place(p.LookTitle, 0, y)
+			y = y + p.LookTitle:GetStringHeight() + 4
+			place(p.LookNote, 0, y)
+			y = y + p.LookNote:GetStringHeight() + 10
+			local count = #F.Looks
+			local lw = floor((CW - SCHEME_GAP * (count - 1)) / count)
+			for i, c in ipairs(F.Looks) do
+				c:SetSize(lw, 5 + PREVIEW_H + SCHEME_NAME_H)
+				c.psW = lw - 10
+				c.psLength = lookLength(c)
+				place(c, (i - 1) * (lw + SCHEME_GAP), y)
+				if not c.psPainted then
+					c.psPainted = true
+					W.Painter(c, paintLook)
+				else
+					paintLook(c)
+				end
+			end
+			y = y + 5 + PREVIEW_H + SCHEME_NAME_H + 14
+		end
 		place(p.Keep, 0, y)
 		return heroH, y + p.Keep:GetStringHeight()
 	end,
@@ -1211,6 +1424,29 @@ local function noteRow(p, glyph, color, heading)
 	return n
 end
 
+-- Lays note `n` out on page `p` from `y` down (its hairline at `y`), shown
+-- or not. -> the y under it
+local function layNote(p, n, y, shown)
+	for _, k in ipairs({ "Rule", "Glyph", "Head", "Text", "Link" }) do
+		if n[k] then n[k]:SetShown(shown) end
+	end
+	if not shown then return y end
+	n.Rule:ClearAllPoints()
+	n.Rule:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -y)
+	n.Rule:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, -y)
+	local top = y + 10
+	place(n.Glyph, 0, top + 2)
+	place(n.Head, NOTE_X, top)
+	local linkW = n.Link and (n.Link:GetWidth() + 16) or 0
+	n.Text:SetWidth(CW - NOTE_X - linkW)
+	place(n.Text, NOTE_X, top + n.Head:GetStringHeight() + 3)
+	if n.Link then
+		n.Link:ClearAllPoints()
+		n.Link:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, -(top - 2))
+	end
+	return top + n.Head:GetStringHeight() + 3 + n.Text:GetStringHeight() + 10
+end
+
 PAGES[#PAGES + 1] = {
 	key = "start",
 	build = function(P)
@@ -1332,34 +1568,14 @@ PAGES[#PAGES + 1] = {
 		p.Next:SetHeight(10 + p.Next.Text:GetStringHeight() + 10)
 		y = y + p.Next:GetHeight() + 14
 
-		local function lay(n, shown)
-			for _, k in ipairs({ "Rule", "Glyph", "Head", "Text", "Link" }) do
-				if n[k] then n[k]:SetShown(shown) end
-			end
-			if not shown then return end
-			n.Rule:ClearAllPoints()
-			n.Rule:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -y)
-			n.Rule:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, -y)
-			local top = y + 10
-			place(n.Glyph, 0, top + 2)
-			place(n.Head, NOTE_X, top)
-			local linkW = n.Link and (n.Link:GetWidth() + 16) or 0
-			n.Text:SetWidth(CW - NOTE_X - linkW)
-			place(n.Text, NOTE_X, top + n.Head:GetStringHeight() + 3)
-			if n.Link then
-				n.Link:ClearAllPoints()
-				n.Link:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, -(top - 2))
-			end
-			y = top + n.Head:GetStringHeight() + 3 + n.Text:GetStringHeight() + 10
-		end
 		local beta = ns.routesBeta and true or false
 		p.Beta.Text:SetText((L["Played to the end in tests, but not yet by players. If a step is wrong, press %s in the guide window and tell us on Discord."]):format(cmd(L["Skip"])))
-		lay(p.Beta, beta)
+		y = layNote(p, p.Beta, y, beta)
 		if beta then W.SetChip(p.Beta.Chip, string.upper(L["Beta"]), "warning") else p.Beta.Chip:Hide() end
 		p.Discord.Text:SetText(L["Feedback, bug reports and news."])
-		lay(p.Discord, true)
+		y = layNote(p, p.Discord, y, true)
 		p.Packs.Text:SetText(L["Guides by other players, installed like any addon. They show under Community guides in the guide list."])
-		lay(p.Packs, true)
+		y = layNote(p, p.Packs, y, true)
 		setChevronText(F.Start, g and L["Start guide"] or L["Choose a guide"])
 		return START_H, y - 10
 	end,
@@ -1494,7 +1710,8 @@ local function build()
 	end)
 	-- Any close marks it seen, for the character and the account; stepping
 	-- aside for the route choice does not, nor does a cinematic closing it
-	-- (it comes back after the cinematic, on the same page).
+	-- (it comes back after the cinematic, on the same page). A close tells
+	-- the windows waiting for it (UI/WhatsNew.lua).
 	F:SetScript("OnHide", function()
 		if stepping then return end
 		if inCinematic() then
@@ -1504,6 +1721,7 @@ local function build()
 		ns.CharState().welcomeSeen = SEEN
 		ns.DB().welcomeSeen = SEEN
 		pending = nil
+		ns.Fire("WELCOME_CLOSED")
 	end)
 	ns.CloseOnEscape("PolestarWelcome")
 	WEL.frame = F
@@ -1713,6 +1931,23 @@ function WEL.IsShown()
 	return F ~= nil and F:IsShown()
 end
 
+-- Up, or due and waiting (for the login delay, a fight, a cinematic or the
+-- route choice): a window that must not open over it waits for
+-- WELCOME_CLOSED.
+function WEL.Busy()
+	return WEL.IsShown() or pending ~= nil
+end
+
+-- The welcome's building blocks, for the windows in its look
+-- (UI/WhatsNew.lua): the night, the emblem, the Dipper, wrapped text,
+-- placing, the note rows, and its measures.
+WEL.Kit = {
+	night = night, emblem = emblem, dipper = dipper, para = para, place = place,
+	noteRow = noteRow, layNote = layNote, colored = colored,
+	WIDTH = WIDTH, INNER = INNER, CW = CW, EDGE = EDGE, BOTTOM = BOTTOM,
+	FOOT_H = FOOT_H, FOOT_PAD = FOOT_PAD, SIDE_X = SIDE_X, SIDE_Y = SIDE_Y, CHERO_TEXT_W = CHERO_TEXT_W,
+}
+
 -- The page shown: its key, its place and the number of pages, its title.
 function WEL.Page()
 	if not F then return nil end
@@ -1737,6 +1972,13 @@ local function yieldToRouteChoice()
 	pending = "asked"
 	afterRouteChoice()
 end
+
+-- The route line cards follow their setting, the route's colour and reduced motion.
+local LOOK_SETTINGS = { ["nav.lineStyle"] = true, ["nav.dotColor"] = true, ["nav"] = true, ["ui.reduceMotion"] = true, ["ui"] = true, [""] = true }
+ns.On("SETTING_CHANGED", function(path)
+	if not (F and F.Looks and LOOK_SETTINGS[path or ""]) then return end
+	for _, c in ipairs(F.Looks) do paintLook(c) end
+end)
 
 -- The character's flag, set as the addon loads: due (0) for a new character,
 -- seen for one Polestar already knew, so only new characters get it unasked.

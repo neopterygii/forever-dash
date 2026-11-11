@@ -904,6 +904,38 @@ fn apply_loop(step: &V, s: &V, r: &mut R) {
 	step.set("goals", kept);
 }
 
+/// A step only a player who chose the group way follows: `when group <quest>`, `when dungeon "<Name>"`.
+fn opt_in_step(step: &V) -> bool {
+	step.get("when").items().iter().any(|p| !p.get("neg").truthy() && matches!(p.get("k").as_str(), Some("group") | Some("dungeon")))
+}
+
+/// The guide menu's "Group" chip (#1358): some goal on the route every player follows needs a group.
+/// Not an `optional` goal; not one in an opt-in step (opt_in_step) or of a quest accepted only in one
+/// (its later goals go with the accept, as validate's group_quests_of); not the turn-in of a dungeon or
+/// raid quest (the run was the group content, handing it in is not).
+fn route_needs_group(steps: &[V]) -> bool {
+	let mut only: FxHashMap<String, bool> = FxHashMap::default();
+	for step in steps {
+		for goal in step.get("goals").items() {
+			if goal.get("t").as_str() == Some("accept") && !goal.get("quest").is_undef() {
+				let k = stringify(&goal.get("quest"), None);
+				let prev = only.get(&k).copied();
+				only.insert(k, prev != Some(false) && opt_in_step(step));
+			}
+		}
+	}
+	steps.iter().filter(|s| !opt_in_step(s)).any(|step| {
+		step.get("goals").items().iter().any(|goal| {
+			let group = goal.get("group");
+			let quest = goal.get("quest");
+			group.truthy()
+				&& !goal.get("optional").truthy()
+				&& !(!quest.is_undef() && only.get(&stringify(&quest, None)) == Some(&true))
+				&& !(goal.get("t").as_str() == Some("turnin") && matches!(group.get("kind").as_str(), Some("dungeon") | Some("raid")))
+		})
+	})
+}
+
 /// `resolveGuide(ast, data, diag, { pack, author })`.
 pub fn resolve_guide(ast: &V, data: &Data, diag: &mut Diagnostics, pack: Option<&str>, author: Option<&str>) -> V {
 	let file = ast.get("file").as_str().unwrap_or("").to_string();
@@ -1239,11 +1271,12 @@ pub fn resolve_guide(ast: &V, data: &Data, diag: &mut Diagnostics, pack: Option<
 		}
 		gsteps.push(step);
 	}
-	if gsteps.items().iter().any(|s| s.get("goals").items().iter().any(|goal| goal.get("group").truthy() && !goal.get("optional").truthy())) {
+	if route_needs_group(&gsteps.items()) {
 		guide.set("group", true);
 	}
 	check_labels(&steps, r);
 	check_along_goals(&gsteps.items(), r);
+	check_background(&steps, &gsteps.items(), r);
 	guide
 }
 
@@ -1330,6 +1363,41 @@ fn check_along_goals(steps: &[V], r: &mut R) {
 				format!("{what} in an `along` step never checks off: Polestar checks it only on the step the route is on, so it stays listed{until}"),
 				Some("put it in a step of its own, or track something the game counts (a quest objective, a bag count)"),
 			);
+		}
+	}
+}
+
+/// `background` (#1135) marks an `along until` step of zone-wide, slow goals: each quest objective in it
+/// needs a finish step before the step that hands its quest in (a later step, not an along one, working
+/// the same objective), so a player still short when the route gets there is sent to finish it.
+fn check_background(steps: &[V], gsteps: &[V], r: &mut R) {
+	for (i, s) in steps.iter().enumerate() {
+		if !s.get("background").truthy() {
+			continue;
+		}
+		if s.get("along").as_str().is_none() {
+			r.err(&s.get("backgroundLine"), "`background` goes on an `along until <label>` step", Some("add `along until <label>`, the label on the step that hands the quest in"));
+			continue;
+		}
+		let Some(step) = gsteps.get(i) else { continue };
+		for goal in step.get("goals").items() {
+			let t = goal.get("t").to_js_string();
+			if !["kill", "collect", "interact", "use"].contains(&t.as_str()) || goal.get("quest").is_undef() || goal.get("oi").is_undef() {
+				continue;
+			}
+			let (q, oi) = (goal.get("quest").num(), goal.get("oi").num());
+			let same_quest = |g: &V| !g.get("quest").is_undef() && g.get("quest").num() == q;
+			let Some(hand_in) = (i + 1..gsteps.len()).find(|&k| gsteps[k].get("goals").items().iter().any(|g| g.get("t").as_str() == Some("turnin") && same_quest(g))) else { continue };
+			let finished = (i + 1..hand_in).any(|k| {
+				!gsteps[k].get("along").truthy() && gsteps[k].get("goals").items().iter().any(|g| g.get("t").to_js_string() == t && same_quest(g) && !g.get("oi").is_undef() && g.get("oi").num() == oi)
+			});
+			if !finished {
+				r.err(
+					&goal.hidden("_line"),
+					format!("background goal for quest {}.{} has no finish step before its hand-in (line {})", q, oi, gsteps[hand_in].hidden("_line").to_js_string()),
+					Some("add a step that works it, at the densest spot, right before the step that hands the quest in"),
+				);
+			}
 		}
 	}
 }
@@ -2191,6 +2259,10 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 						.filter(|e: &V| !e.get("classes").is_empty())
 						.collect();
 					smart(&sm, r, &goal, &entries, "class trainer");
+					// The step's zone: the Engine ranks its trainers first wherever the player stands (#1357).
+					if !ctx.zone_id.is_nullish() && goal.get("candidates").truthy() {
+						goal.set("zone", ctx.zone_id.clone());
+					}
 				}
 				if g.get("nearest").truthy() && v == "sethome" {
 					smart(&sm, r, &goal, &npcs("innkeeper"), "innkeeper");
@@ -2276,6 +2348,13 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 				goal.set("level", g.get("level"));
 				if g.get("frac").truthy() {
 					goal.set("frac", g.get("frac"));
+				}
+				// `grind <npc>`: the mob's spawn areas place the goal (below), so the arrow leads to the nearest of
+				// them; without spawns, the step's goto.
+				if !g.get("grind").is_undef() {
+					goal.set("grind", g.get("grind"));
+					set_if(&goal, "npcName", optional_name(r, "npc", &g.get("grind")));
+					candidates = vec![cand("npc", g.get("grind"))];
 				}
 			}
 			"money" => {
@@ -2497,10 +2576,16 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 			let objectives = q.get("objectives").items();
 			let olen = objectives.len();
 			let listed = || data.quest_objectives(&gq).iter().map(|o| objective_label(&gq, o)).collect::<Vec<_>>().join(", ");
+			// An index past a list the data has names no quest-log line: the goal never counts. An error;
+			// with no list in the data (a quest whose objectives it does not know) only a warning.
 			if !oi.is_undef() && oi.num() > olen as f64 {
 				let msg = format!("quest {} has {} objective(s) in data, not {}{}", gq, olen, oi, if olen > 0 { format!(": {}", listed()) } else { String::new() });
 				let hint = if olen > 0 { format!("write `quest {gq}.<n>` with one of these (`polestar find {gq}` lists them)") } else { format!("drop the `.{oi}`: write `quest {gq}`") };
-				r.warn(&ln, msg, Some(&hint));
+				if olen > 0 {
+					r.err(&ln, msg, Some(&hint));
+				} else {
+					r.warn(&ln, msg, Some(&hint));
+				}
 			}
 			let kind = match v {
 				"kill" => Some("kill"),
@@ -2541,8 +2626,12 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 				"interact" => "object",
 				_ => "item",
 			};
-			if named.truthy() && same_kind(&named.get("kind")) && !named.get("id").is_nullish() && !named.get("id").strict_eq(&id) {
-				let right = find(&id);
+			// The line's own target is another objective of the quest: the index is swapped, whatever kind the
+			// objective it names is (a kill written on an item's line), and progress and count follow the wrong
+			// quest-log line. An error. Another target of the same kind that is no objective: a warning.
+			let right = if named.truthy() { find(&id) } else { None };
+			let swapped = right.is_some_and(|ri| oi.num() != ri as f64);
+			if swapped || (named.truthy() && same_kind(&named.get("kind")) && !named.get("id").is_nullish() && !named.get("id").strict_eq(&id)) {
 				let own = right.and_then(|ri| data.quest_objectives(&gq).get(ri - 1).cloned());
 				let own_part = match (&own, right) {
 					(Some(o), Some(ri)) => {
@@ -2557,19 +2646,14 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 					None if used => bag_hint.clone(),
 					None => format!("its objectives: {}", listed()),
 				};
-				if right.is_some() {
+				if swapped {
 					r.err(&ln, msg, Some(&hint));
 				} else {
 					r.warn(&ln, msg, Some(&hint));
 				}
 			}
-			if named.truthy() && v == "collect" && named.get("kind").as_str() != Some("item") {
-				let right = objective_for(&q, Some("item"), &id);
-				let hint = match right {
-					Some(ri) => format!("write `quest {gq}.{ri}`, or `quest {gq}` to take the index from the item"),
-					None if used => bag_hint.clone(),
-					None => format!("its objectives: {}", listed()),
-				};
+			if named.truthy() && !swapped && v == "collect" && named.get("kind").as_str() != Some("item") {
+				let hint = if used { bag_hint.clone() } else { format!("its objectives: {}", listed()) };
 				r.warn(&ln, format!("{}, not an item", quest_is(&objective_label(&gq, &named))), Some(&hint));
 			}
 			if oi.is_undef() {
@@ -2676,14 +2760,18 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 				}
 			}
 		}
-		let area = v == "kill" || v == "collect" || v == "interact";
+		let area = v == "kill" || v == "collect" || v == "interact" || !goal.get("grind").is_undef();
 		if !explicit && !picked.get("x").is_undef() {
 			let srcs: Vec<V> = if area && picked.get("sources").truthy() { picked.get("sources").items() } else { vec![c.clone()] };
 			let elites: Vec<V> = if area { picked.get("elites").items() } else { Vec::new() };
 			let sp = spawn_spots(data, &srcs, &picked.get("map"), &picked.get("f"), picked.get("x").num(), picked.get("y").num(), &elites);
 			if let Some(sp) = sp {
-				goal.set("spots", sp.spots);
-				if v == "kill" || v == "collect" {
+				// A grind keeps its mob's places the arrow picks, not the alternatives (other places it spawns, walked
+				// by hand for a quest target): any of the mob will do, and a grind's spots cost memory (#1392).
+				let grind = !goal.get("grind").is_undef();
+				let kept: Vec<V> = sp.spots.iter().filter(|s| !(grind && s.get("alt").truthy())).cloned().collect();
+				goal.set("spots", if kept.is_empty() { sp.spots } else { kept });
+				if v == "kill" || v == "collect" || !goal.get("grind").is_undef() {
 					spot_levels(data, &goal, &srcs, &picked.get("map"), &picked.get("f"));
 				}
 				if sp.spread && area {
@@ -2770,6 +2858,9 @@ fn resolve_goal(g: &V, zone_map: &V, prev: &V, r: &mut R, ctx: &Ctx) -> V {
 			format!("`{v}` has no coordinates (no known spawns; add @x,y)"),
 			Some("add @x,y where the player finds the target (the map coordinates the game shows), so the arrow can lead there"),
 		);
+	}
+	if !goal.get("grind").is_undef() && goal.get("x").is_undef() {
+		r.warn(&ln, format!("`grind {}` has no known spawns here: the arrow keeps the step's goto", goal.get("grind")), None);
 	}
 	goal
 }

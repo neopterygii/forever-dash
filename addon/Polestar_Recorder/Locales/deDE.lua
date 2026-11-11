@@ -28,6 +28,11 @@ L["commands: /psrec on | off | ui | mark <text> | trail on [label] | trail off |
 L["mark not recorded (not in the world yet)"] = "Markierung nicht aufgezeichnet (noch nicht in der Welt)"
 L["every recording not yet uploaded was deleted"] = "alle noch nicht hochgeladenen Aufzeichnungen wurden gelöscht"
 L["this deletes every recording not yet uploaded. Type |cffffd100/psrec clear confirm|r within %d seconds to proceed."] = "Das löscht alle noch nicht hochgeladenen Aufzeichnungen. Gib innerhalb von %d Sekunden |cffffd100/psrec clear confirm|r ein, um fortzufahren."
+L["/reload or log out to send what's recorded"] = "/reload oder abmelden, um das Aufgezeichnete zu senden"
+-- L["explorer mode: %s (/psrec explore on | off)"] = ""
+-- L["usage: /psrec explore on | off"] = ""
+-- L["explorer mode %s"] = ""
+-- L["In Forever's new zones and dungeons the Recorder notes the creatures, your path, quest map points, dungeon floors, boss pulls, where quest givers stand and the objects you open in more detail. Nothing new about you."] = ""
 
 -- Trail.lua
 L["trail stopped after %d min: %s, %d points"] = "Spur nach %d Min. beendet: %s, %d Punkte"
@@ -65,6 +70,9 @@ L["Recorder: show or hide the window"] = "Recorder: Fenster ein- oder ausblenden
 -- Recorder.lua
 L["recordings from the previous Recorder (schema 1) were removed; recording now uses schema 2"] = "Aufzeichnungen des vorherigen Recorders (Schema 1) wurden entfernt; die Aufzeichnung verwendet jetzt Schema 2"
 L["on, because sharing is on in Polestar Client. /psrec off to stop."] = "an, weil das Teilen im Polestar Client eingeschaltet ist. /psrec off zum Beenden."
+
+-- Explore.lua
+-- L["recording more detail here to map this new zone (/psrec explore off to stop)"] = ""
 
 -- No longer in the code (its English changed or it went away): reuse or delete.
 -- L["this client exposes no talent tree API"] = "dieser Client bietet keine Talentbaum-API"

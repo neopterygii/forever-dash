@@ -251,8 +251,13 @@ end
 -- member's Polestar is heard; false once the player closes it (0.3.3 had it
 -- off by default and stored nothing for an untouched one, so those players
 -- get it too). panelPos: its place once dragged.
--- chat: a party chat line for a finished objective (Quests/PartyChat.lua).
-ns.RegisterDefaults("party", { share = true, show = true, waitForGroup = true, lootNeeds = true, panel = true, panelPos = false, chat = true })
+-- chat: party chat lines for finished objectives and ready quests; chatLoot:
+-- for a looted item that starts a quest; chatEcho: your own lines shown to
+-- you too; chatHideOthers: other players' Polestar lines hidden;
+-- chatOnlyNeeded: nothing said while every member runs Polestar
+-- (Quests/PartyChat.lua).
+ns.RegisterDefaults("party", { share = true, show = true, waitForGroup = true, lootNeeds = true, panel = true, panelPos = false, chat = true,
+	chatLoot = true, chatEcho = false, chatHideOthers = false, chatOnlyNeeded = false })
 
 local DEBOUNCE = 2 -- seconds after a quest log change
 local JOIN_MIN, JOIN_SPREAD = 3, 3 -- snapshot 3-6 s after the roster gains someone
@@ -707,6 +712,24 @@ end
 -- Whether the member under roster key `key` has spoken Polestar.
 function Party.Spoke(key) return spoken[key] == true end
 
+-- Whether every party member online runs Polestar (each has spoken it):
+-- Quests/PartyChat.lua stays quiet then with party.chatOnlyNeeded on. False
+-- solo, in a raid, and while a member's name is unknown or secret; with
+-- sharing and showing both off nobody is heard, so false.
+function Party.AllRunPolestar()
+	if not grouped() then return false end
+	local n = GetNumSubgroupMembers and GetNumSubgroupMembers() or 0
+	if n == 0 then return false end
+	for i = 1, n do
+		local unit = "party" .. i
+		if not (UnitIsConnected and not UnitIsConnected(unit)) then
+			local key = memberKey(unit)
+			if not (key and spoken[key]) then return false end
+		end
+	end
+	return true
+end
+
 -- The party members whose progress we have, by name:
 -- { { name = "Ana", quests = { [q] = { { cur, max }, ... } } }, ... }.
 function Party.Members()
@@ -905,8 +928,10 @@ local function patternOf(fmt)
 	return "^" .. p .. "$"
 end
 
+-- In the client's chat lockdown (encounters, dungeons) the system line is a
+-- secret string, and matching one throws: it reads as no answer.
 local function onSystem(_, text)
-	if not pushQuest or type(text) ~= "string" then return end
+	if not pushQuest or type(text) ~= "string" or ns.Compat.IsSecret(text) then return end
 	if not pushPatterns then
 		pushPatterns = {}
 		for global, why in pairs(PUSH_ERRORS) do
@@ -1344,16 +1369,16 @@ function Party.PointAt(unit)
 	local _, name = memberKey(unit)
 	stopFollow()
 	local label = name and L["Party: %s"]:format(name) or L["Party"]
-	if not Nav.SetTarget(map, x, y, label) then return false end
-	follow = { unit = unit, label = label, target = Nav.GetTarget(), map = map, x = x, y = y }
+	local target = Nav.SetTarget(map, x, y, label)
+	if not target then return false end
+	follow = { unit = unit, label = label, target = target, map = map, x = x, y = y }
 	if C_Timer and C_Timer.NewTicker then
 		follow.ticker = ns.NewTicker(FOLLOW, function()
 			if not follow or Nav.GetTarget() ~= follow.target then return stopFollow() end
 			local m2, x2, y2 = ns.Compat.GetUnitMapPosition(follow.unit)
 			if not m2 then return end
 			if m2 ~= follow.map or math.abs(x2 - follow.x) + math.abs(y2 - follow.y) > 0.5 then
-				Nav.SetTarget(m2, x2, y2, follow.label)
-				follow.target, follow.map, follow.x, follow.y = Nav.GetTarget(), m2, x2, y2
+				follow.target, follow.map, follow.x, follow.y = Nav.SetTarget(m2, x2, y2, follow.label), m2, x2, y2
 			end
 		end)
 	end
@@ -1460,8 +1485,18 @@ Party.OPTIONS = {
 			help = L["On a loot window or roll, a line under a quest item a party member still needs and you don't. Nothing is passed or said for you."] },
 		{ kind = "toggle", key = "party.panel", label = L["Party panel"], search = SEARCH,
 			help = L["Opens by itself when someone in your party runs Polestar too: each member's level, step and what they still need of yours; click a name to point the arrow at them. Closed, it stays closed; /polestar party opens it again."] },
-		{ kind = "toggle", key = "party.chat", label = L["Tell my party in chat when I finish a quest objective"], search = SEARCH .. ", chat, announce, objective, tell",
-			help = L["One party chat line with the quest's link when you finish an objective, and one when the quest is ready to turn in. Everyone in the party sees it, Polestar or not. Never solo or in a raid."] },
+		{ kind = "toggle", key = "party.chat", label = L["Tell my party about objectives and ready quests"], search = SEARCH .. ", chat, announce, objective, tell",
+			help = L["A party chat line with the quest's link when you finish its objectives, and one when the quest is ready to turn in. Everyone in the party sees it, Polestar or not. Never solo or in a raid."] },
+		{ kind = "toggle", key = "party.chatLoot", label = L["Tell my party when I loot an item that starts a quest"], search = SEARCH .. ", chat, announce, loot, item, tell",
+			help = L["A party chat line with the item's link and the quest it starts."] },
+		{ kind = "toggle", key = "party.chatEcho", label = L["Show my own lines in my chat too"], search = SEARCH .. ", chat, announce",
+			disabled = function() return not (ns.Get("party.chat") or ns.Get("party.chatLoot")) end,
+			help = L["Off: your party sees the lines Polestar says for you, and your chat stays clear of them."] },
+		{ kind = "toggle", key = "party.chatHideOthers", label = L["Hide other players' Polestar lines"], search = SEARCH .. ", chat, announce, hide",
+			help = L["Party members' Polestar lines leave your chat. Shown, they carry Polestar's star."] },
+		{ kind = "toggle", key = "party.chatOnlyNeeded", label = L["Only when someone in the party doesn't have Polestar"], search = SEARCH .. ", chat, announce",
+			disabled = function() return not (ns.Get("party.chat") or ns.Get("party.chatLoot")) end,
+			help = L["Nothing goes to chat while everyone in your party runs Polestar: they see your progress in their guide."] },
 	},
 }
 

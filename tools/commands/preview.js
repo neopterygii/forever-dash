@@ -18,6 +18,8 @@ const ADDON = path.join(ROOT, 'addon', 'Polestar');
 const OUT = path.join(ROOT, 'docs', 'preview');
 const PREVIEW_HEADER = header('svg', 'preview', "the addon's Lua and the client stubs in tests/lua");
 const FILES = ['Core/Core.xml', 'Theme/Theme.xml', 'Gear/Gear.xml', 'Lookup/Lookup.xml', 'Dungeons/Dungeons.xml', 'UI/UI.xml'];
+// The welcome's setup page with the route lines loaded before the UI (its route line cards).
+const WELCOME_ROUTE_FILES = ['Core/Core.xml', 'Theme/Theme.xml', 'Nav/Nav.xml', 'Maps/FlightPaths.lua', 'Maps/RouteStrokes.lua', 'Maps/RouteSparkle.lua', 'Maps/RouteLines.lua', ...FILES.slice(2)];
 // The reward panel scenes also run QoL, which owns the marks.
 const REWARD_FILES = [...FILES, 'QoL/QoL.xml'];
 
@@ -348,6 +350,18 @@ function altsScene(script) {
 }
 const ALTS_FILES = [...FILES, 'Alts/Alts.xml'];
 const TOAST = ['PolestarRareToast'];
+// The notice the guide window puts up the first time it hides in an instance
+// (UI/GuideFrame.lua's hint, Nav/Alerts.lua's banner): the real Nav and UI
+// against the world stub, with the minimap button on or off and the toggle's
+// key bound or not.
+const HINT = ['PolestarAlert'];
+const HINT_FILES = ['Core/Core.xml', 'Theme/Theme.xml', 'Nav/Nav.xml', 'Maps/Maps.xml', 'UI/UI.xml'];
+function hintScene(button, key) {
+	return `Polestar.Set("maps.minimapButton", ${button})
+function GetBindingKey(action) if action == "POLESTAR_TOGGLE" then return ${key ? JSON.stringify(key) : 'nil'} end end
+function GetBindingText(key) return (key:gsub("CTRL", "Ctrl"):gsub("SHIFT", "Shift")) end
+Polestar.Nav.alerts.ShowNotice(Polestar.L["Polestar is hidden here"], Polestar.UI.GuideFrame.HowToShow(), 12)`;
+}
 // The guide menu's sample library: pitches, pros and cons on a few guides,
 // Westfall on its real map (art with POLESTAR_CLIENT_ART), and leveling
 // guides past 30 so the folders show the bands. Pitches written for the
@@ -414,6 +428,13 @@ function pickerScene(script) {
 }
 // Three guides open as tabs, the leveling one active.
 const TABS = 'uistub.openTabs({ { uistub.elwynn, 3 }, { uistub.tailoring, 2 }, { uistub.stormwindRep, 2 } }, 1)';
+// The Dwarf's and the Gnome's Dun Morogh as two guides of one title and range,
+// and Zephras Isle for the Horde too, as shipped (#1358).
+const SPLIT_STARTS = `local U = uistub.guides
+local function copy(id, newId, k, v) local g = {} for key, val in pairs(U[id]) do g[key] = val end g.id, g[k] = newId, v U[newId] = g table.insert(uistub.order, newId) end
+U["forever/alliance/dwarf-gnome/01-dun-morogh"].races = { "Dwarf" }
+copy("forever/alliance/dwarf-gnome/01-dun-morogh", "forever/alliance/gnome/01-dun-morogh", "races", { "Gnome" })
+copy("forever/alliance/skyborne/01-zephras-isle", "forever/horde/skyborne/01-zephras-isle", "faction", "Horde")`;
 // Step pictures (GUIDE_FORMAT.md, `image`) on two sample steps, the field
 // step's beside its tip and one without a tip. A community addon ships its
 // own screenshots; the preview draws Polestar's own textures in their place.
@@ -473,6 +494,26 @@ Polestar.RegisterOptions({ page = "Questing", tab = "Quests", section = "Quest d
 // Every module that registers options, for the pages they fill.
 const MODULE_FILES = ['Core/Core.xml', 'Theme/Theme.xml', 'Quests/Quests.xml', 'Gear/Gear.xml', 'Maps/Maps.xml', 'QoL/QoL.xml', 'Lookup/Lookup.xml',
 	'Dungeons/Dungeons.xml', 'UI/UI.xml', 'Rares/Rares.xml'];
+// The target button over the world: a step's goals fed straight to the
+// buttons (QoL.CurrentStep), and a frame around the button and its name
+// plate so the picture takes the plate in (the roots' box is the button's).
+function targetScene(goals, { side = 'right', extra = '' } = {}) {
+	const area = side === 'left' ? '"RIGHT", PolestarTargetButton, "RIGHT", 4, 0' : '"LEFT", PolestarTargetButton, "LEFT", -4, 0';
+	return `Polestar.Set("qol.buttonTextSide", "${side}")
+${extra}
+local raw = ${goals}
+local view = { index = 1, status = "current", goals = {} }
+for i, g in ipairs(raw) do view.goals[i] = { index = i, t = g.t, status = "active", subject = g.target, quest = g.quest, npc = g.npc, npcName = g.npcName } end
+Polestar.QoL.CurrentStep = function() return view, raw end
+Polestar.QoL.Buttons.Refresh()
+local area = CreateFrame("Frame", "PolestarPreviewTargetArea", UIParent)
+area:SetSize(250, 56)
+area:SetPoint(${area})`;
+}
+const TIGERS = '{ { t = "kill", target = "Elder Stranglethorn Tiger", group = { kind = "elite", rank = 1 } }, { t = "kill", target = "Stranglethorn Tiger" }, { t = "kill", target = "Young Stranglethorn Tiger" } }';
+const KOBOLDS = '{ { t = "kill", target = "Kobold Vermin" }, { t = "collect", item = 950, itemName = "Candle", npc = 300, npcName = "Kobold Laborer" } }';
+const GIVERS = '{ { t = "turnin", quest = 9, npc = 240, npcName = "Sir S. J. Erlgadin" }, { t = "accept", quest = 10, npc = 241, npcName = "Gryan Stoutmantle" }, { t = "talk", npc = 242, npcName = "Marshal Dughan" } }';
+const TARGET = ['PolestarTargetButton', 'PolestarPreviewTargetArea'];
 // Six more pages from third-party modules, in the game font: the list
 // scrolls in its own area, clear of the version and the stage chip.
 const MANY_PAGES = `Polestar.Set("ui.font", "game")
@@ -730,7 +771,7 @@ arrow:SetAllPoints(player); arrow:SetTexture(NAV .. "arrow"); arrow:SetRotation(
 // After login: the marker layers turned on (off by default), the quest log,
 // then the markers settle (Quests' 0.2 s throttle).
 const QUEST_LOG = `local w = stub.world
-for _, k in ipairs({ "mapObjectives", "minimapObjectives", "objectiveAreas", "turnInMarkers", "availableQuests" }) do Polestar.Set("qol." .. k, true) end
+for _, k in ipairs({ "mapObjectives", "minimapObjectives", "turnInMarkers", "availableQuests" }) do Polestar.Set("qol." .. k, true) end
 stub.advance(0.3)
 w.accept(7, { { text = "Kobold Vermin slain: 0/10", type = "monster", required = 10 } }); w.progress(7, 1, 3)
 w.accept(60, { { text = "Large Candle: 0/8", type = "item", required = 8 } }); w.progress(60, 1, 2)
@@ -792,9 +833,44 @@ Polestar.Engine.SetGuide("preview/areas")
 stub.advance(0.3)
 Polestar.Engine.AimGoal(1, 3)
 stub.advance(0.3)`;
-function questScene(roots, script, place) {
+function questScene(roots, script, place, files = QUEST_FILES) {
 	// `before` is read when the panel runs, so the database is only built for these scenes.
-	return { roots, stubs: QUEST_STUBS, files: QUEST_FILES, get before() { return questWorld(place); }, script };
+	return { roots, stubs: QUEST_STUBS, files, get before() { return questWorld(place); }, script };
+}
+// The route line on the minimap (Maps/RouteLines.lua) beside a herbalist's
+// tracking: the game draws its blips into the minimap's own picture, under
+// every frame on it, so here they are textures of the minimap itself.
+const ROUTE_FILES = [...QUEST_FILES, 'Maps/FlightPaths.lua', 'Maps/RouteStrokes.lua', 'Maps/RouteSparkle.lua', 'Maps/RouteLines.lua'];
+const MINIMAP_ROUTE = `for _, p in ipairs({ { 15, -12 }, { 27, -23 }, { 40, -33 }, { -26, 18 }, { 8, 40 }, { -40, -22 } }) do
+	local blip = Minimap:CreateTexture(nil, "BACKGROUND", nil, 1)
+	blip:SetTexture("Interface\\\\AddOns\\\\Polestar\\\\Media\\\\Nav\\\\pin-fill"); blip:SetVertexColor(1, 0.82, 0, 1)
+	blip:SetSize(9, 9); blip:SetPoint("CENTER", Minimap, "CENTER", p[1], p[2])
+end
+Polestar.Set("nav.travel", false)
+Polestar.Nav.SetTarget(1429, 50.2, 44.4, "Peacebloom")
+stub.advance(0.5)`;
+function minimapRouteScene(script) {
+	return questScene(['Minimap'], script, undefined, ROUTE_FILES);
+}
+// The route line's three looks (nav.lineStyle) on one route: a walk bending
+// along its path to the guide pin, then a flight on (its own colour, dashed
+// in the line style). The geometry stands in for Nav's (Nav.GetRouteGeometry)
+// so the walk has a path to follow, as on the real walking maps.
+const ROUTE_STYLES = `Polestar.Set("nav.travel", false)
+Polestar.Set("nav.trailDots", false)
+Polestar.Nav.SetTarget(1429, 70, 68, "Peacebloom")
+stub.advance(0.5)
+local pc, px, py = Polestar.Compat.GetPlayerWorldPosition()
+local tc, tx, ty = Polestar.Nav.GetTargetWorld()
+local pts = {}
+for i = 0, 16 do
+	local t = i / 16
+	pts[#pts + 1] = { pc, px + (tx - px) * t + math.sin(t * math.pi * 2) * 90, py + (ty - py) * t + math.sin(t * math.pi) * 80 }
+end
+local geom = { legs = { { kind = "walk", pts = pts, current = true }, { kind = "flight", pts = { { tc, tx, ty }, { tc, tx - 450, ty - 800 } } } } }
+Polestar.Nav.GetRouteGeometry = function() return geom end`;
+function routeStyleScene(root, style) {
+	return questScene([root], `${ROUTE_STYLES}\nPolestar.Set("nav.lineStyle", "${style}")\nPolestar.Fire("NAV_ROUTE_GEOMETRY")\nstub.advance(1.5)`, undefined, ROUTE_FILES);
 }
 // Group content (the compiled `group`, the goal view's `party`): a class
 // guide whose route needs a group, its Felwood step (elites; the author's
@@ -1032,10 +1108,16 @@ const SCENES = [
 		title: 'The welcome, once per new character after login: Hello, Make it yours and Route style (on the account\'s first), Your first guide',
 		panels: [
 			{ roots: ['PolestarWelcome'], script: 'Polestar.UI.Welcome.Show("welcome")' },
-			{ roots: ['PolestarWelcome'], script: 'Polestar.UI.Welcome.Show("setup")' },
+			// With the route lines, for the route line's cards.
+			{ roots: ['PolestarWelcome'], files: WELCOME_ROUTE_FILES, script: 'Polestar.UI.Welcome.Show("setup")' },
 			{ roots: ['PolestarWelcome'], script: 'Polestar.UI.Welcome.Show("route")' },
 			{ roots: ['PolestarWelcome'], get script() { return `${clientArtLua()}Polestar.UI.Welcome.Show("start")`; } },
 		],
+	},
+	{
+		file: 'whats-new.svg',
+		title: 'What\'s new, once per account on the first login after an update (/polestar whatsnew, About)',
+		panels: [{ roots: ['PolestarWhatsNew'], script: 'Polestar.UI.WhatsNew.Show()' }],
 	},
 	{
 		file: 'guide-professions.svg',
@@ -1405,6 +1487,14 @@ end`,
 			{ roots: ['PolestarReport'], script: `Polestar.Set("ui.skin", "${k}"); ${TABS}; Polestar.UI.ShowReport()` },
 		]),
 	},
+	{
+		file: 'skins-hud.svg',
+		title: 'Skins: the flight timer on the window skin, in Polestar, Halo and Hearth (#1390)',
+		backdrop: 'terrain',
+		panels: ['polestar', 'halo', 'hearth'].map((k) => (
+			{ files: MODULE_FILES, roots: ['PolestarFlightTimer'], script: `Polestar.Set("ui.skin", "${k}"); local f = PolestarFlightTimer; f.Dest:SetText("Stormwind"); f.Time:SetText("1:42"); Polestar.Widgets.SetProgress(f.Progress, 0.4); f:Show()` }
+		)),
+	},
 	// The game's looks draw the client's own art: rendered only with
 	// POLESTAR_CLIENT_ART (local: true), so it never lands in docs/preview.
 	...['forever', 'blizzard', 'classic'].map((k) => ({
@@ -1444,6 +1534,22 @@ end`,
 				roots: PICKER,
 				script: pickerScene(`${TABS}; Polestar.Set("ui.pickerFaction", "All"); Polestar.UI.ShowPicker(); Polestar.UI.Picker.SetCategory("Leveling")
 Polestar.UI.Picker.Select("forever/alliance/02-westfall")`),
+			},
+		],
+	},
+	{
+		file: 'picker-folders.svg',
+		title: "Guide menu: Browse folders fold away (Alliance 1\u201330, its count kept); same-titled starts say whose they are: Dun Morogh (Dwarf), (Gnome)",
+		panels: [
+			{
+				roots: PICKER,
+				script: pickerScene(`${TABS}; ${SPLIT_STARTS}; Polestar.UI.ShowPicker(); Polestar.UI.Picker.SetCategory("Leveling")
+Polestar.UI.Picker.SetCollapsed("Leveling/Alliance/1", true); Polestar.UI.Picker.Select("forever/alliance/gnome/01-dun-morogh")`),
+			},
+			{
+				roots: PICKER,
+				script: pickerScene(`${TABS}; ${SPLIT_STARTS}; Polestar.Set("ui.pickerFaction", "All"); Polestar.UI.ShowPicker(); Polestar.UI.Picker.SetCategory("Leveling")
+Polestar.UI.Picker.Select("forever/horde/skyborne/01-zephras-isle")`),
 			},
 		],
 	},
@@ -1610,6 +1716,25 @@ Polestar.UI.Picker.SetCategory("Leveling"); Polestar.UI.Picker.Select("forever/h
 		],
 	},
 	{
+		file: 'minimap-route.svg',
+		title: "The route line on the minimap over a herbalist's tracking (yellow dots, drawn into the minimap's own picture as the game draws them, so under every line or pin): the route colours by default; Dot colour Cyan at 80% opacity and 80% size; \"Route line on the minimap\" off, the guide pin kept",
+		panels: [
+			minimapRouteScene(MINIMAP_ROUTE),
+			minimapRouteScene(`${MINIMAP_ROUTE}\nPolestar.Set("nav.dotColor", "cyan"); Polestar.Set("nav.minimapRouteAlpha", 0.8); Polestar.Set("nav.minimapRouteSize", 0.8)\nstub.advance(0.3)`),
+			minimapRouteScene(`${MINIMAP_ROUTE}\nPolestar.Set("nav.minimapRoute", false)\nstub.advance(0.3)`),
+		],
+	},
+	{
+		file: 'route-styles.svg',
+		title: 'The route line\'s looks on one route, a walk along its path then a flight: the line (the default for new players: a soft shadow, chevrons, the flight dashed in its own colour) and the dots on the world map; then the line and the dots on the minimap, clear of the player\'s arrow',
+		panels: [
+			routeStyleScene('WorldMapFrame', 'line'),
+			routeStyleScene('WorldMapFrame', 'dots'),
+			routeStyleScene('Minimap', 'line'),
+			routeStyleScene('Minimap', 'dots'),
+		],
+	},
+	{
 		file: 'dungeons.svg',
 		title: 'Dungeons in the hub: Home for a level 20 Tauren (the dungeons for your level, faction filter Horde); Wailing Caverns, its Quests tab',
 		panels: [
@@ -1686,6 +1811,28 @@ local r = b.Chains[1]; r:GetScript("OnEnter")(r)`) },
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('local a = Polestar.Rares.AlertOf({ source = "vignette", kind = "rare", id = 61, name = "Thuros Lightfingers", level = 11 }, { map = 1429, x = 89.2, y = 79.1 }, true); a.yards = 87; Polestar.Fire("RARE_SPOTTED", a); stub.advance(4)') },
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('Polestar.Fire("RARE_SPOTTED", Polestar.Rares.AlertOf({ source = "nameplate", kind = "rare", id = 471, name = "Mother Fang", level = 10, classification = "rareelite" }, nil, false)); stub.advance(12)') },
 			{ rares: true, files: RARES_FILES, roots: TOAST, script: raresScene('local a = Polestar.Rares.AlertOf({ source = "vignette", kind = "treasure", id = 2843, name = "Battered Chest" }, { map = 1429, x = 79.6, y = 55.7 }, true); a.yards = 412; Polestar.Fire("RARE_SPOTTED", a)') },
+		],
+	},
+	{
+		file: 'instance-hint.svg',
+		title: "The window hidden in a dungeon, the first time: the notice saying how to bring it back (the minimap button and a bound key; with neither, /polestar), in Polestar and Hearth",
+		backdrop: 'terrain',
+		panels: [
+			{ stubs: ['stub_world.lua'], files: HINT_FILES, roots: HINT, script: hintScene(true, 'CTRL-SHIFT-P') },
+			{ stubs: ['stub_world.lua'], files: HINT_FILES, roots: HINT, script: `Polestar.Set("ui.skin", "hearth"); ${hintScene(false, null)}` },
+		],
+	},
+	{
+		file: 'target-button.svg',
+		title: "The target button shows who it targets: an elite tiger's skull in gold and the tigers after it; a mob to kill and the bag for a collect's dropper; a step with no mob, its NPCs (? to turn in, ! to accept, a bubble to talk); the name on the left; the elite's face once seen (Polestar's emblem stands in for the game's portrait); the setting off",
+		backdrop: 'terrain',
+		panels: [
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(TIGERS) },
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(KOBOLDS) },
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(GIVERS) },
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(TIGERS, { side: 'left' }) },
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(TIGERS, { extra: 'local exists, unitName = UnitExists, UnitName; UnitExists = function(u) if u == "target" then return true end return exists and exists(u) end; UnitIsPlayer = function(u) return u == "player" end; UnitName = function(u) if u == "target" then return "Elder Stranglethorn Tiger" end return unitName(u) end; UnitClassification = function() return "elite" end; SetPortraitTexture = function(tex) tex:SetTexture(Polestar.Theme.Media("emblem")) end' }) },
+			{ files: MODULE_FILES, roots: TARGET, script: targetScene(TIGERS, { extra: 'Polestar.Set("qol.targetPlate", false)' }) },
 		],
 	},
 ];

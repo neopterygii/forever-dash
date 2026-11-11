@@ -39,6 +39,8 @@ local defaults = {
 	itemButton = true,       -- quest item button
 	bagGlow = true,          -- the step's item glows in the bags
 	targetButton = true,     -- target macro button
+	targetPlate = true,      -- ... its icon shows the action, its name in the target's colour, the next names as small icons
+	targetAnnounce = false,  -- ... a chat line when its names change
 	guideNameTarget = false, -- opt in: extend navigation clicks to targeting, with shared marking settings
 	rareButton = true,       -- target button for a rare the addon spotted
 	hearthButton = true,     -- Hearthstone button while a hearth goal is active
@@ -386,11 +388,11 @@ function Client.ItemIcon(itemID)
 	return nil
 end
 
--- true / false, or nil when range does not apply (no target, no range).
+-- true / false, or nil when range does not apply (no target, no range, in combat).
 function Client.ItemInRange(itemID)
 	if not (C_Item and C_Item.IsItemInRange and UnitExists and UnitExists("target")) then return nil end
-	-- The client blocks range checks on non-friendly units in combat.
-	if inLockdown() and not (UnitIsFriend and UnitIsFriend("player", "target")) then return nil end
+	-- The client blocks addons' range checks in combat, on friendly targets too (#871, #1198).
+	if inLockdown() then return nil end
 	return readable(C_Item.IsItemInRange(itemID, "target"))
 end
 
