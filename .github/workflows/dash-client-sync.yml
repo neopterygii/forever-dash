@@ -10,7 +10,8 @@ name: forever-dash client sync
 # then update themselves (src-tauri/src/update.rs).
 #
 # Any other conflict, or a failed build or launch test, stops the run before anything is pushed
-# (GitHub mails the failed run); merge that release by hand, and the next run finds it done.
+# (GitHub mails the failed run). Then merge that release into dash by hand (no version bump, no
+# notes) and push: the next run sees dash holds it but no client-v tag of ours does, and releases.
 #
 # Secret DASH_SYNC_TOKEN: a fine-grained token on neopterygii/forever-dash with Contents and
 # Workflows read/write. The default token can't push upstream's workflow changes, and its tag push
@@ -56,9 +57,13 @@ jobs:
           [ -n "$tag" ] || { echo "::error::no published client release upstream"; exit 1; }
           # Upstream's tags stay out of ours (refs/upstream/), so their client-v* can't clash with ours.
           git fetch --no-tags https://github.com/fitzforge/polestar.git "refs/tags/$tag:refs/upstream/$tag"
-          if git merge-base --is-ancestor "refs/upstream/$tag" HEAD; then
-            echo "dash holds $tag already; nothing to do."
+          ours="$(git tag -l 'client-v*' | sort -V | tail -1)"
+          if [ -n "$ours" ] && git merge-base --is-ancestor "refs/upstream/$tag" "refs/tags/$ours"; then
+            echo "$ours holds $tag already; nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "refs/upstream/$tag" HEAD; then
+            # Merged by hand (a conflict or build failure the run couldn't settle): release it.
+            echo "merged=true" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "upstream=${tag#client-v}" >> "$GITHUB_OUTPUT"
@@ -70,12 +75,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.which.outputs.tag }}
           UPSTREAM: ${{ steps.which.outputs.upstream }}
+          MERGED: ${{ steps.which.outputs.merged }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "refs/upstream/$TAG" || true
-          git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge of $TAG did not start"; exit 1; }
-          python3 services/dash/client-sync/sync.py resolve
+          if [ "$MERGED" != true ]; then
+            git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "refs/upstream/$TAG" || true
+            git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge of $TAG did not start"; exit 1; }
+            python3 services/dash/client-sync/sync.py resolve
+          fi
           current="$(jq -r .version apps/client/src-tauri/tauri.conf.json)"
           version="$(python3 services/dash/client-sync/sync.py next "$current" $(git tag -l 'client-v*'))"
           python3 services/dash/client-sync/sync.py bump "$version"
