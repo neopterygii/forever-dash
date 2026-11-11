@@ -299,3 +299,11 @@ jobs:
           version="${GITHUB_REF_NAME#client-v}"
           gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag --latest=false \
             --title "Polestar Client $version (beta)" --notes-file notes.md
+
+      # forever-dash: no hand check before players get it (dash-client-sync.yml tags with no one in
+      # the loop); still never the repository's latest, which stays the addon's.
+      - name: Publish (forever-dash)
+        if: github.repository == 'neopterygii/forever-dash'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false

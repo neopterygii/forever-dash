@@ -1,0 +1,143 @@
+name: forever-dash client sync
+
+# Keeps Forever Dash Client on upstream's newest Polestar Client, with no one in the loop.
+#
+# Every hour: if upstream (fitzforge/polestar) has published a client-v* release that dash doesn't
+# hold yet, merge that tag into dash, keep our versions where upstream only bumped its own
+# (services/dash/client-sync/sync.py), set the next 1.0.x, write the notes from upstream's
+# "What's new", build the client and run the launch test, then push dash and tag client-v<ours>.
+# The tag runs client.yml, which builds every platform and publishes the release; installed copies
+# then update themselves (src-tauri/src/update.rs).
+#
+# Any other conflict, or a failed build or launch test, stops the run before anything is pushed
+# (GitHub mails the failed run); merge that release by hand, and the next run finds it done.
+#
+# Secret DASH_SYNC_TOKEN: a fine-grained token on neopterygii/forever-dash with Contents and
+# Workflows read/write. The default token can't push upstream's workflow changes, and its tag push
+# wouldn't start client.yml.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dash-client-sync
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  sync:
+    if: github.repository == 'neopterygii/forever-dash'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Token
+        env:
+          TOKEN: ${{ secrets.DASH_SYNC_TOKEN }}
+        run: '[ -n "$TOKEN" ] || { echo "::error::set the DASH_SYNC_TOKEN secret (see the top of this file)"; exit 1; }'
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: dash
+          fetch-depth: 0
+          token: ${{ secrets.DASH_SYNC_TOKEN }}
+
+      - name: Which release
+        id: which
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api 'repos/fitzforge/polestar/releases?per_page=100' --jq '.[] | select(.draft | not) | select(.prerelease | not) | .tag_name | select(test("^client-v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sort -V | tail -1)"
+          [ -n "$tag" ] || { echo "::error::no published client release upstream"; exit 1; }
+          # Upstream's tags stay out of ours (refs/upstream/), so their client-v* can't clash with ours.
+          git fetch --no-tags https://github.com/fitzforge/polestar.git "refs/tags/$tag:refs/upstream/$tag"
+          if git merge-base --is-ancestor "refs/upstream/$tag" HEAD; then
+            echo "dash holds $tag already; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "upstream=${tag#client-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Merge
+        id: merge
+        if: steps.which.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.which.outputs.tag }}
+          UPSTREAM: ${{ steps.which.outputs.upstream }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "refs/upstream/$TAG" || true
+          git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge of $TAG did not start"; exit 1; }
+          python3 services/dash/client-sync/sync.py resolve
+          current="$(jq -r .version apps/client/src-tauri/tauri.conf.json)"
+          version="$(python3 services/dash/client-sync/sync.py next "$current" $(git tag -l 'client-v*'))"
+          python3 services/dash/client-sync/sync.py bump "$version"
+          gh api "repos/fitzforge/polestar/releases/tags/$TAG" --jq .body > "$RUNNER_TEMP/upstream-notes.md"
+          python3 services/dash/client-sync/sync.py notes "$version" "$UPSTREAM" "$RUNNER_TEMP/upstream-notes.md" > "apps/client/release/notes/$version.md"
+          git add apps/client
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Merging $TAG as Forever Dash Client $version"
+
+      - name: Linux libraries
+        if: steps.which.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf xvfb
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        if: steps.which.outputs.skip != 'true'
+        with:
+          package_json_file: apps/client/package.json
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        if: steps.which.outputs.skip != 'true'
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        if: steps.which.outputs.skip != 'true'
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: steps.which.outputs.skip != 'true'
+        with:
+          workspaces: apps/client/src-tauri
+
+      # Completes the lockfile (upstream's when it conflicted) with what only ours needs and our
+      # version, without moving a dependency upstream chose.
+      - name: Lockfile
+        if: steps.which.outputs.skip != 'true'
+        run: |
+          cargo update --workspace --manifest-path apps/client/src-tauri/Cargo.toml
+          git add apps/client/src-tauri/Cargo.lock
+
+      - name: Frontend dependencies
+        if: steps.which.outputs.skip != 'true'
+        working-directory: apps/client
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build
+        if: steps.which.outputs.skip != 'true'
+        working-directory: apps/client
+        run: pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Launch test
+        if: steps.which.outputs.skip != 'true'
+        run: apps/client/release/smoke.sh apps/client/src-tauri/target/release/polestar-client 15
+
+      - name: Push dash and the tag
+        if: steps.which.outputs.skip != 'true'
+        env:
+          UPSTREAM: ${{ steps.which.outputs.upstream }}
+          VERSION: ${{ steps.merge.outputs.version }}
+        run: |
+          git commit -q -m "dash: Polestar Client $UPSTREAM (Forever Dash Client $VERSION)" \
+            -m "Merged by .github/workflows/dash-client-sync.yml."
+          git tag "client-v$VERSION"
+          git push --atomic origin HEAD:refs/heads/dash "refs/tags/client-v$VERSION"
