@@ -8,19 +8,61 @@ trail replay (Polestar's planner MapView), and a play journal with notes. See
 cargo build --release
 node tools/export-media.cjs ui/public      # Polestar glyphs + Nav arrow as static PNGs (gitignored)
 node tools/brand.cjs                       # ui/public/brand/*.svg (committed; rerun after changing the mark)
-# Map art and game icons (Blizzard's art: local only, never committed), from wago.tools, no game client needed:
+# Map art ("Map art" below) and game icons (Blizzard's art: local only, never committed), from wago.tools, no game client needed:
 (cd ../../rust && cargo build --release -p forge && ./target/release/forge data build --no-questie --forever-tables wago)
 node ../../tools/polestar.js planner art --out <art dir>   # terrain + zone maps
 node tools/dash-art.cjs <art dir>                           # Azeroth world map + layout, zone maps cut to their own land
 node tools/export-icons.cjs <art dir>                       # race/sex portraits, class icons
 (cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
-./target/release/forever-dash serve --db dash.db [--addr 127.0.0.1:8790] [--art <planner art dir>]
+./target/release/forever-dash serve --db dash.db --open [--addr 127.0.0.1:8790] [--art <planner art dir>]   # development: no sign-in
 ./target/release/forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 ./target/release/forever-dash dump --wtf <WTF dir>           # what the parser makes of it
 ./target/release/forever-dash reparse --db dash.db           # rebuild derived tables from the raw chunks
 ./target/release/forever-dash spoken sync --dir spoken --db dash.db   # newest Spoken quest narration
 ```
+
+## Running your own
+
+Nobody hosts this for you, and it is not affiliated with Blizzard Entertainment or with Polestar. The
+image holds the server and its web page only: no game art, no narration, no keys.
+
+```yaml
+services:
+  forever-dash:
+    image: ghcr.io/neopterygii/forever-dash-server:latest
+    restart: unless-stopped
+    volumes: ["./data:/data"]
+    ports: ["127.0.0.1:8790:8790"]   # behind your reverse proxy
+    # environment:
+    #   DASH_SPOKEN: "1"             # Spoken's quest narration (about 1.1 GB, fetched by the server)
+    #   DASH_AI_URL: "http://litellm:4000/v1/chat/completions"   # diary entries in prose; key in data/ai-key
+    #   DASH_AI_MODEL: "diary"
+    #   DASH_OPEN: "1"               # no group codes: anyone who reaches the address sees and uploads
+```
+
+- **First start:** the server writes `data/groups` with one group code. Read it there (`cat data/groups`):
+  it signs you in to the site and is the token the client uploads with. More groups: more lines
+  (`docker compose exec forever-dash forever-dash group-code` makes a code), then restart.
+- **Reverse proxy:** any that passes the request through (Caddy: `reverse_proxy forever-dash:8790`). Serve
+  it over https: the sign-in cookie is `Secure` unless the page itself was opened over plain http. Let
+  uploads of 4 MB through.
+- **Map art:** without `data/art` the map is a grid and says so. Build it with the commands above (they
+  need Node, Rust and this checkout, and fetch the client's files from wago.tools) with `data/art` as the
+  art folder. It is Blizzard's art: yours to fetch, not ours to put in the image.
+- **Off unless you turn it on:** Spoken's narration (`DASH_SPOKEN`: the audio is generated from Blizzard's
+  quest text and Spoken's licence covers its code, not the audio, so it is your call) and the prose
+  diary (`DASH_AI_URL`: each finished session's facts, with character and NPC names, go to the address
+  you give and nowhere else).
+- **Backup:** stop the container and copy `data/dash.db` and `data/groups`. The rest can be fetched or
+  built again. **Upgrade:** pull the image and start it again; after a release that stores more,
+  `forever-dash reparse --db /data/dash.db` rebuilds the derived tables from the raw recordings.
+- **What it collects:** what the client uploads from the PCs you set up, and nothing else: the Polestar
+  Recorder's recordings (where the character went, quests, kills, deaths, loot, levels, the quest text it
+  read), the snapshot addon's character sheet (gear, bags, money, professions, reputation) and the other
+  players the character grouped, traded, duelled or fought with or looked at for a while (name, realm,
+  class, race, level, guild). It all stays in `data/dash.db` on your server. The server calls out only
+  for what you turned on: Spoken's releases on GitHub, and the diary's address.
 
 - **Groups (`serve --groups FILE`):** who sees what. Each line of the file is a group, `<code> <name>`
   (`forever-dash group-code` makes a code), or `+ <device token> <code>` for an older device token that
@@ -28,8 +70,11 @@ node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF fold
   that group. A character stays with the PC (install) that first uploaded it: that PC moves it by
   uploading with another code, another PC naming it does not take it. The site asks for a group code (`POST /api/signin`, kept in an
   HttpOnly cookie for a year) and every read is limited to the group's characters; player notes are
-  per group. No code, no site: there is no registration. Without `--groups` the site is open and uploads
-  follow `--tokens`.
+  per group. No code, no site: there is no registration. A `--groups` file that does not exist is made
+  with a first code (mode 600; the log names the file, never the code). The server is closed unless told
+  otherwise: without `--groups` it starts only with `--open` (the site and uploads open to anyone who can
+  reach the address: development, a LAN you trust) or with `--tokens` (uploads need a token, viewing is
+  open).
 - `POST /v1/upload`: upstream ingest's body and answer (accepted / duplicate / rejected per
   seq, de-duplicated on (install, seq)), plus `maps` and `characters` (charId -> name/realm,
   read from `WTF/Account/<acct>/<realm>/<name>/SavedVariables/Polestar_Recorder.lua`: the

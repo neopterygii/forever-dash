@@ -259,9 +259,15 @@ pub struct Line {
 	pub length: f64,
 }
 
+/// Set by `serve` without `--spoken`: no narration is offered (the files are not served either).
+pub static OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// The narration of quest `q` at `moment` ("accept" or "complete"), given by `giver` (`npc`/`object`
 /// and id, when the record has one), for a character of `sex` (UnitSex: 2 male, 3 female).
 pub fn resolve(db: &Connection, q: i64, moment: &str, giver: Option<(&str, i64)>, sex: Option<i64>) -> Option<Line> {
+	if OFF.load(std::sync::atomic::Ordering::Relaxed) {
+		return None;
+	}
 	let line = format!("{q}-{moment}");
 	let mut candidates = Vec::new();
 	if let Some((kind, id)) = giver {

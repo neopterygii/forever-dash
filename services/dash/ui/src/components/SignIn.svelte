@@ -31,10 +31,11 @@
 		<button disabled={busy || !code.trim()}>{busy ? 'Signing in…' : 'Sign in'}</button>
 		<p id="hint" class:wrong>{wrong ? 'That code doesn’t match a group.' : 'You see the characters uploaded with your group’s code.'}</p>
 	</form>
+	<p class="legal">A fan-made dashboard. Not affiliated with Blizzard Entertainment or with Polestar.</p>
 </main>
 
 <style>
-	.signin { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; box-sizing: border-box; background: var(--bg); }
+	.signin { min-height: 100%; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px 16px; box-sizing: border-box; background: var(--bg); }
 	form { width: min(360px, 100%); display: grid; gap: 10px; padding: 28px 24px; border-radius: 14px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); }
 	.mark { height: 40px; width: auto; justify-self: center; margin-bottom: 10px; }
 	label { font-size: 12px; font-weight: 700; color: var(--textDim); }
@@ -44,5 +45,6 @@
 	button { background: var(--accent); color: var(--onAccent); border: 0; border-radius: 8px; padding: 10px; font-weight: 700; font-size: 14px; cursor: pointer; }
 	button:disabled { opacity: 0.6; cursor: default; }
 	p { margin: 2px 0 0; font-size: 12px; color: var(--textMuted); line-height: 1.4; }
+	.legal { max-width: 360px; text-align: center; font-size: 11px; }
 	p.wrong { color: var(--danger); }
 </style>

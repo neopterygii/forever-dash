@@ -9,7 +9,8 @@
 //! + <device token> <code>      an older device token that uploads into that group
 //! ```
 //! The first group also takes every character uploaded before groups existed.
-//! Without a groups file the site is open (a LAN or Tailscale server) and uploads follow `--tokens`.
+//! Without `--groups` the site is open and uploads follow `--tokens`: the server only starts that way
+//! with `--tokens` or `--open`. A `--groups` file that does not exist is made with a first code.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -145,6 +146,15 @@ pub fn claim(db: &Connection, grp: &str, install: &str, chars: &[&str]) -> rusql
 	Ok(())
 }
 
+/// The groups file of a first start: one new code, readable by the server's user only. Its text.
+pub fn first_file(path: &std::path::Path) -> std::io::Result<String> {
+	use std::io::Write;
+	use std::os::unix::fs::OpenOptionsExt;
+	let text = format!("# Group codes: `<code> <name>` per line. A code signs you in to the site and is the client's token.\n# Restart the server after changing this file.\n{} Household\n", new_code());
+	std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?.write_all(text.as_bytes())?;
+	Ok(text)
+}
+
 /// A new group code: 16 characters from an alphabet without look-alikes, in groups of four.
 pub fn new_code() -> String {
 	const ABC: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
@@ -169,6 +179,19 @@ mod tests {
 		let c = new_code();
 		assert_eq!(c.len(), 19);
 		assert_ne!(c, new_code());
+	}
+
+	#[test]
+	fn a_first_start_makes_one_private_code() {
+		use std::os::unix::fs::PermissionsExt;
+		let f = std::env::temp_dir().join(format!("fd-groups-{}", new_code()));
+		let text = first_file(&f).unwrap();
+		assert_eq!(parse(&text).unwrap().list.len(), 1);
+		assert_eq!(std::fs::read_to_string(&f).unwrap(), text);
+		assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+		// Never over a file that is there.
+		assert!(first_file(&f).is_err());
+		std::fs::remove_file(&f).unwrap();
 	}
 
 	#[test]

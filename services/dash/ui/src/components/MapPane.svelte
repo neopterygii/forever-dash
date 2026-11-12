@@ -31,6 +31,8 @@
 	let overlay = $state.raw<TrailOverlay | null>(null);
 	let map = $state.raw<MapViewApi | null>(null);
 	let noGL = $state(false);
+	/** The server has no map art (its art folder was never built): the map is MapView's grid. */
+	let noArt = $state(false);
 	/** The events of the badge clicked (kept open until something else is clicked). */
 	let info = $state.raw<DashEvent[] | null>(null);
 	/** What the pointer is over, and where (CSS px of the map). */
@@ -82,6 +84,7 @@
 				view.on('pick', ({ sx, sy }) => act(overlay?.hit(sx, sy) ?? null));
 				overlay = new TrailOverlay(overlayCanvas, view);
 				map = view;
+				noArt = !(view as unknown as { index?: unknown }).index;
 				// For scripts that check the map (tools/map-check.cjs): the view, to move it.
 				(window as unknown as { __dashView?: MapViewApi }).__dashView = view;
 			})
@@ -434,6 +437,7 @@
 		</select>
 	</div>
 	{#if noGL}<div class="nomap">WebGL2 is not available in this browser.</div>{/if}
+	{#if noArt}<p class="noart" role="status"><b>No map art yet.</b> Trails and events are drawn over a plain grid until the server’s art folder is built (the server’s README, “Map art”).</p>{/if}
 </section>
 
 <style>
@@ -483,6 +487,8 @@
 	.ticks { position: absolute; left: 8px; right: 8px; top: -6px; height: 4px; pointer-events: none; }
 	.ticks b { position: absolute; top: 0; width: 1px; height: 5px; background: var(--textMuted); }
 	.clock { min-width: 120px; text-align: right; color: var(--textDim); font-variant-numeric: tabular-nums; }
+	.noart { position: absolute; z-index: 3; left: 50%; top: 56px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--window-shadow); color: var(--textDim); font-size: 12px; line-height: 1.4; pointer-events: none; }
+	.noart b { color: var(--text); }
 	.nomap { position: absolute; inset: 0; display: grid; place-items: center; color: var(--textDim); }
 	@media (max-width: 720px) {
 		.legend { display: none; }

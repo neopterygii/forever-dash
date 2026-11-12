@@ -1,6 +1,6 @@
 //! forever-dash: the self-hosted dashboard server.
 //!
-//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] [--groups FILE] [--tokens FILE] [--fonts DIR]
+//!   forever-dash serve  [--db dash.db] [--addr 127.0.0.1:8790] [--web ui/dist] [--art DIR] --groups FILE | --open [--tokens FILE] [--fonts DIR]
 //!   forever-dash group-code                 a new group code, for a line of the --groups file (groups.rs)
 //!   forever-dash upload --wtf <WTF dir> [--server http://127.0.0.1:8790]
 //!   forever-dash dump   --wtf <WTF dir>
@@ -12,6 +12,10 @@
 //! `serve --ai-url URL --ai-key-file FILE [--ai-model diary]` also has a model write each closed
 //! session's diary entry in prose (an OpenAI-compatible endpoint: the LiteLLM gateway); without it
 //! every entry is the template's.
+//!
+//! `serve --groups FILE` is how a site starts: the file is made with a first group code when it does
+//! not exist. `--open` instead serves everything to anyone who can reach the address (development, or
+//! a LAN you trust); with neither (and no `--tokens`) the server does not start.
 //!
 //! `serve --spoken <dir>` plays Spoken's quest narration in the journal and keeps it up to date
 //! (checks rusty-key/spoken-wow's releases at start and every day).
@@ -58,7 +62,7 @@ fn err500(e: impl std::fmt::Display) -> Response {
 	(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
 }
 
-/// Device tokens (`--tokens <file>`, one per line); none = uploads are open (LAN/Tailscale only).
+/// Device tokens (`--tokens <file>`, one per line); none = uploads are open (`--open` only).
 static TOKENS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 fn authorized(headers: &axum::http::HeaderMap) -> bool {
@@ -465,18 +469,41 @@ async fn serve(args: &[String]) {
 	if !tokens.is_empty() {
 		println!("uploads need one of {} device tokens", tokens.len());
 	}
+	let no_tokens = tokens.is_empty();
 	let _ = TOKENS.set(tokens);
-	// Groups: sign-in codes and who sees which characters (groups.rs). None: an open site.
+	// Who may view and upload (groups.rs). Closed unless told otherwise: a first start makes the
+	// groups file with one code, and without groups or tokens only `--open` starts the server.
+	let open = args.iter().any(|a| a == "--open");
 	if let Some(f) = args.iter().position(|a| a == "--groups").and_then(|i| args.get(i + 1)) {
-		let g = groups::parse(&std::fs::read_to_string(f).expect("read --groups")).unwrap_or_else(|e| panic!("--groups {f}: {e}"));
+		let text = match std::fs::read_to_string(f) {
+			Ok(t) => t,
+			Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+				let t = groups::first_file(Path::new(f)).unwrap_or_else(|e| panic!("--groups {f}: {e}"));
+				println!("first start: made a group code in {f}. Read it there: it signs you in to the site and is the client's token");
+				t
+			}
+			Err(e) => panic!("--groups {f}: {e}"),
+		};
+		let g = groups::parse(&text).unwrap_or_else(|e| panic!("--groups {f}: {e}"));
+		if g.list.is_empty() && !open {
+			eprintln!("--groups {f} names no group: add a line `<code> <name>` (`forever-dash group-code` makes a code), or start with --open for a site anyone who reaches it can see");
+			std::process::exit(2);
+		}
 		println!("{} groups: viewing and uploads need a group code", g.list.len());
 		groups::init(&db.lock().unwrap(), g).expect("give earlier characters to the first group");
+	} else if open {
+		println!("--open: the site is open to anyone who can reach it{}", if no_tokens { ", and so are uploads" } else { "" });
+	} else if no_tokens {
+		eprintln!("refusing to start an open site: give --groups FILE (made with a first group code when it does not exist), or --open for a site and uploads open to anyone who can reach it");
+		std::process::exit(2);
 	} else {
-		println!("no --groups: the site is open to anyone who can reach it");
+		println!("no --groups: anyone who can reach the site can view it");
 	}
 	// Spoken's narration: served from <dir>/<current version>, followed daily. The static route is
 	// resolved per request so a new version is served without a restart.
 	let spoken_dir = args.iter().position(|a| a == "--spoken").and_then(|i| args.get(i + 1)).map(PathBuf::from);
+	// Off unless the host asks for it: no line is offered, whatever an earlier run left in the database.
+	spoken::OFF.store(spoken_dir.is_none(), std::sync::atomic::Ordering::Relaxed);
 	if let Some(dir) = spoken_dir.clone() {
 		let db_path = db_path.clone();
 		std::thread::spawn(move || loop {
