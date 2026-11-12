@@ -13,6 +13,7 @@ node tools/brand.cjs                       # ui/public/brand/*.svg (committed; r
 node ../../tools/polestar.js planner art --out <art dir>   # terrain + zone maps
 node tools/dash-art.cjs <art dir>                           # Azeroth world map + layout, zone maps cut to their own land
 node tools/export-icons.cjs <art dir>                       # race/sex portraits, class icons
+node tools/openmap-art.cjs <art dir>                        # optional: OpenMap's stitched zone art ("Stitched zone art" below)
 (cd ui && pnpm install && pnpm build)      # the web UI -> ui/dist (pnpm dev: hot reload against a running server)
 node tools/gen-sample.mjs ../../../samples/synth --days 2   # synthetic WTF folder (until real recordings exist)
 ./target/release/forever-dash serve --db dash.db --open [--addr 127.0.0.1:8790] [--art <planner art dir>]   # development: no sign-in
@@ -158,6 +159,17 @@ services:
   the server sends `index.json` with `no-cache`; the client files it needs are cached under `data/sources/casc`). Check with
   `node tools/map-check.cjs http://127.0.0.1:8799 <out dir>`: screenshots of four places at nine zooms
   (it moves the map through `window.__dashView`).
+- **Stitched zone art** (optional; `tools/openmap-art.cjs`, `index.openmap`): OpenMap's baked picture of
+  every zone map on the world map (github.com/openmap-world/openmap, `MapZones`), fetched at a pinned
+  commit, converted from BLP to PNG and halved three times for the far zooms (about 80 MB). With it the
+  region scale is that one seamless picture, tiles picked by zoom, and our own cut zone maps are drawn
+  only for towns and for maps outside the world painting (they stay in the list: MapView names zones
+  from it). What it gives: no seams, no terrain showing between zones, the land between zones painted.
+  What it costs: it is every painting resampled to one resolution and DXT-compressed, so it is softer
+  than our PNGs, and one picture cannot leave zone by zone: it gives way to the terrain where most zones
+  would (`STITCHED_DETAIL`), which leaves the largest (the Barrens) soft for a while. The paintings in
+  the gaps are Santiago Reyes's, used by OpenMap with his permission and not under its MIT licence.
+  `--remove` takes the layer out and the map is as before.
 - **Phone pass** (`tools/phone-check.cjs`): after any change to the site, build the UI, run a server with
   sample data and run `node tools/phone-check.cjs http://127.0.0.1:8799 <out dir>`. It opens every view
   (overview, a character, both journals with a quest card, diary editing, gear, bags and stats, people,

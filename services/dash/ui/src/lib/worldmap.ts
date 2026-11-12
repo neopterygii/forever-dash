@@ -6,6 +6,11 @@
 //   sharp minimap terrain as the (blurry close up) world painting fades out;
 // - close in: the terrain alone.
 //
+// With OpenMap's stitched zone art in the art folder (tools/openmap-art.cjs, index.openmap), the
+// region scale is that instead: one seamless picture of every zone in the world painting's own
+// space, at one resolution, in tiles at four levels of detail. Our own cut zone maps are then used
+// only for towns (drawn over it) and for maps outside the world painting.
+//
 // Every zone's painting is the same 1002 x 668 pixels, whatever ground it covers: the Barrens' has a
 // tenth of a pixel per yard, Ironforge's thirteen times that. So each painting gives way to the
 // terrain (one pixel per yard everywhere) at its own zoom, where it is drawn about twice its size:
@@ -29,6 +34,9 @@ const TERRAIN_IN: [number, number] = [0.5, 1.1];
 /** A zone map gives way to the terrain over this range of magnification (screen px per pixel of
  *  the painting): soft from about 1.5, mush by 3. */
 const ZONE_OUT_MAG: [number, number] = [1.6, 2.8];
+/** Of the stitched art's pixels, how many most zones' own paintings fill (11 of its 16 per world unit:
+ *  the art is every painting resampled to one resolution). */
+const STITCHED_DETAIL = 11 / 16;
 /** A map drawn inside a larger one (a city in its zone) fades in over this range of magnification:
  *  below it, it is a sharp miniature pasted on a soft map. */
 const INSET_IN_MAG: [number, number] = [0.3, 0.5];
@@ -68,6 +76,22 @@ interface Zone {
 	/** Ours: the zooms over which it fades in (insets only) and gives way to the terrain. */
 	fadeIn?: [number, number];
 	fadeOut?: [number, number];
+	/** Ours: not drawn, the stitched art shows it. */
+	covered?: boolean;
+	/** An OpenMap tile: its level of detail, column and row. */
+	lod?: number;
+	ti?: number;
+	tj?: number;
+}
+/** OpenMap's stitched zone art (tools/openmap-art.cjs). */
+interface OpenMapArt {
+	v: string;
+	/** The world painting's size in the tiles' units, a level-0 tile's side in them, a tile's pixels. */
+	units: [number, number];
+	tile: number;
+	px: number;
+	/** Per level (each twice as coarse as the one before), its tiles as column * 256 + row. */
+	levels: number[][];
 }
 interface Tex {
 	status: string;
@@ -84,6 +108,7 @@ interface ZoneArt {
 	_load(z: Zone): void;
 	_evict(frame: number): void;
 	draw(f: Frame, quad: Quad): boolean;
+	capacity?: number;
 }
 interface Frame {
 	zoom: number;
@@ -101,7 +126,7 @@ interface Quad {
 	end(): void;
 }
 interface Internals {
-	index?: { world?: World; continents?: Record<string, { name?: string }>; zones?: Record<string, { w?: number; h?: number }> };
+	index?: { world?: World; openmap?: OpenMapArt; continents?: Record<string, { name?: string }>; zones?: Record<string, { w?: number; h?: number }> };
 	grid?: { draw: (f: unknown) => void };
 	/** The map shown: 'azeroth' (the continents of the world painting) or another continent id. */
 	__dashMap?: MapChoice;
@@ -199,6 +224,26 @@ function fitZones(art: ZoneArt, px: Record<string, { w?: number; h?: number }>):
 	return { first, last };
 }
 
+/** The stitched tiles as zones of continent 0 (whose offset `o` the painting hangs on), all levels. */
+function stitchedTiles(om: OpenMapArt, world: World, o: { ox: number; oy: number }): { tiles: Map<string, Zone>; fadeOut: [number, number] } {
+	const kx = world.w / om.units[0], ky = world.h / om.units[1];
+	// Gives way to the terrain at the same magnification as any painting, of the detail most zones
+	// really have in it: one picture cannot leave zone by zone, so the largest zones (the Barrens, a
+	// third of that detail) stay on soft for a while and the smallest leave a little early.
+	const density = (om.px / (om.tile * kx)) * STITCHED_DETAIL;
+	const fadeOut: [number, number] = [ZONE_OUT_MAG[0] * density, ZONE_OUT_MAG[1] * density];
+	const tiles = new Map<string, Zone>();
+	om.levels.forEach((keys, lod) => {
+		const side = om.tile * 2 ** lod;
+		for (const k of keys) {
+			const ti = k >> 8, tj = k & 255;
+			const id = `om${lod}_${ti}_${tj}`;
+			tiles.set(id, { id, c: '0', file: `openmap/${lod}/${ti}_${tj}.png?v=${om.v}`, x0: ti * side * kx - o.ox, x1: (ti + 1) * side * kx - o.ox, y0: tj * side * ky - o.oy, y1: (tj + 1) * side * ky - o.oy, area: 0, fadeOut, lod, ti, tj });
+		}
+	});
+	return { tiles, fadeOut };
+}
+
 export function installWorldMap(view: MapViewApi): boolean {
 	const m = view as unknown as Internals;
 	const art = m.zoneArt;
@@ -206,12 +251,25 @@ export function installWorldMap(view: MapViewApi): boolean {
 	if (!art || !Array.isArray(art.zones) || !(art.tex instanceof Map) || typeof art._load !== 'function' || typeof art._evict !== 'function') return false;
 	view.setLayer('zoneArt', true);
 	const fit = fitZones(art, m.index?.zones ?? {});
+	let stitched: { om: OpenMapArt; tiles: Map<string, Zone>; yards: number } | null = null;
 	// There is always art behind the map: no fallback grid when the terrain is off at world scale.
 	if (m.grid) m.grid.draw = () => {};
 	if (world && installLayout(m, world)) {
 		// The world painting as one more "zone", on continent 0's offset (draw adds it back).
 		const o = m.offsets!.get(0) ?? { ox: 0, oy: 0 };
 		art.zones.unshift({ id: 'world', c: '0', file: world.file, x0: -o.ox, x1: world.w - o.ox, y0: -o.oy, y1: world.h - o.oy, area: Infinity, world: true });
+		const om = m.index?.openmap;
+		if (om?.levels?.length && om.tile > 0 && om.px > 0) {
+			// The stitched art covers the painting's continents: of our own maps there, only the towns stay.
+			const placed = new Set(Object.keys(world.continents));
+			// (They stay in the list, not drawn: MapView names the zones from it.)
+			for (const z of art.zones) z.covered = !z.world && !z.fadeIn && placed.has(z.c);
+			const made = stitchedTiles(om, world, o);
+			stitched = { om, tiles: made.tiles, yards: (om.tile * world.w) / om.units[0] };
+			fit.first = made.fadeOut;
+			fit.last = Math.max(made.fadeOut[1], ...art.zones.filter((z) => z.fadeOut && !z.covered).map((z) => z.fadeOut![1]));
+			art.capacity = Math.max(art.capacity ?? 0, 96);
+		}
 		// Around the painting: the page's own dark, not the terrain's near-black sea.
 		if (m.colors) m.colors.sea = [0x12 / 255, 0x16 / 255, 0x24 / 255, 1];
 		let terrain = true;
@@ -253,8 +311,50 @@ export function installWorldMap(view: MapViewApi): boolean {
 		// is whole; the insets last, over their zones.
 		const under = (z: Zone, o: { ox: number; oy: number }) => f.cx >= z.x0 + o.ox && f.cx <= z.x1 + o.ox && f.cy >= z.y0 + o.oy && f.cy <= z.y1 + o.oy;
 		const rank = (z: Zone) => (z.world ? 0 : z.fadeIn ? 3 : under(z, offs.get(z.c)!) ? 2 : 1);
-		const shown = this.zones.filter((z) => offs.has(z.c));
+		const shown = this.zones.filter((z) => offs.has(z.c) && !z.covered);
 		const order = [0, 1, 2, 3].flatMap((r) => shown.filter((z) => rank(z) === r));
+		const want = (z: Zone) => {
+			const t = this.tex.get(z.id);
+			if (t?.status === 'ready' && t.tex) return (t.used = frame), t.tex;
+			if ((!t || (t.status === 'failed' && performance.now() - (t.failedAt ?? 0) > 15000)) && this.loading < 4) this._load(z);
+			pending = true;
+			return null;
+		};
+		// The stitched zone art, after the world: the coarsest level that still has (nearly) a pixel per screen pixel. A tile
+		// still loading shows its part of a coarser one that is there.
+		const o0s = stitched && m.__dashMap === 'azeroth' ? offs.get('0') : null;
+		if (stitched && o0s) {
+			const { om, tiles, yards } = stitched;
+			const alpha = zonesIn * (1 - smooth(fit.first, f.zoom));
+			const top = om.levels.length - 1;
+			const lod = Math.max(0, Math.min(top, Math.floor(Math.log2(om.px / (yards * f.zoom * (window.devicePixelRatio || 1))) + 0.2)));
+			const world = this.zones.find((z) => z.world);
+			if (alpha > 0.002 && world) {
+				const side = yards * 2 ** lod;
+				const bx = world.x0 + o0s.ox, by = world.y0 + o0s.oy;
+				const inset = 0.5 / om.px;
+				for (let ti = Math.max(0, Math.floor((f.x0 - bx) / side)); ti <= Math.floor((f.x1 - bx) / side); ti++) {
+					for (let tj = Math.max(0, Math.floor((f.y0 - by) / side)); tj <= Math.floor((f.y1 - by) / side); tj++) {
+						const z = tiles.get(`om${lod}_${ti}_${tj}`);
+						if (!z) continue;
+						const x0 = z.x0 + o0s.ox, y0 = z.y0 + o0s.oy;
+						let tex = want(z);
+						let u0 = 0, v0 = 0, span = 1;
+						for (let up = 1; !tex && lod + up <= top; up++) {
+							const a = tiles.get(`om${lod + up}_${ti >> up}_${tj >> up}`);
+							const t = a && this.tex.get(a.id);
+							if (!a || t?.status !== 'ready' || !t.tex) continue;
+							t.used = frame;
+							tex = t.tex;
+							span = 1 / 2 ** up;
+							u0 = (ti - ((ti >> up) << up)) * span;
+							v0 = (tj - ((tj >> up) << up)) * span;
+						}
+						if (tex) quad.draw(tex, x0, y0, x0 + side, y0 + side, u0 + inset * span, v0 + inset * span, u0 + span - inset * span, v0 + span - inset * span, alpha);
+					}
+				}
+			}
+		}
 		for (const z of order) {
 			const alpha = z.world ? worldAlpha : (z.fadeIn ? smooth(z.fadeIn, f.zoom) : zonesIn) * (1 - smooth(z.fadeOut ?? TERRAIN_IN, f.zoom));
 			if (alpha <= 0.002) continue;
