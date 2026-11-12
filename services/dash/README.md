@@ -57,6 +57,8 @@ services:
 - **Backup:** stop the container and copy `data/dash.db` and `data/groups`. The rest can be fetched or
   built again. **Upgrade:** pull the image and start it again; after a release that stores more,
   `forever-dash reparse --db /data/dash.db` rebuilds the derived tables from the raw recordings.
+  The image is also tagged `polestar-<addon release>` (`polestar-0.3.7`): the server reads the Recorder's
+  format, so keep it on the tag of the addon your PCs run, or newer.
 - **What it collects:** what the client uploads from the PCs you set up, and nothing else: the Polestar
   Recorder's recordings (where the character went, quests, kills, deaths, loot, levels, the quest text it
   read), the snapshot addon's character sheet (gear, bags, money, professions, reputation) and the other
