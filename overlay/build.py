@@ -10,6 +10,7 @@ h = 0 for a plain x.y.z, so that a hotfix always sorts above our builds of the r
 SHA256SUMS to <out-dir>:
 - every upstream entry kept in order, with its timestamp and compression;
 - overlay/manifest.json patches applied, each only if upstream's file still has its base hash;
+  one marked upstream_has is left out once upstream ships the change;
 - overlay/addons/* folders added to the Polestar zip;
 - every .toc's `## Version:` set to <version>.
 Exits non-zero on any mismatch. Stdlib only.
@@ -49,11 +50,24 @@ def main(src, n, out):
         out_name = name.replace(f"-{base}.zip", f"-{version}.zip")
         out_path = os.path.join(out, out_name)
         changed = 0
+        # Read before writing: writestr() below moves each entry's offset to the output's.
+        names = set(zin.namelist())
+        shipped = {
+            p["path"]
+            for p in manifest["patches"]
+            if "upstream_has" in p and p["upstream_has"]["path"] in names and p["upstream_has"]["text"].encode() in zin.read(p["upstream_has"]["path"])
+        }
         with zipfile.ZipFile(out_path, "w") as zout:
             for info in zin.infolist():
                 body = zin.read(info)
                 if info.filename in patches:
                     p = patches[info.filename]
+                    has = p.get("upstream_has")
+                    if info.filename in shipped:
+                        print(f"::warning::{info.filename}: upstream has '{has['text']}' in {has['path']}; patch left out, drop it from overlay/manifest.json")
+                        applied.add(info.filename)
+                        zout.writestr(info, body, compress_type=info.compress_type)
+                        continue
                     if sha(body) != p["base_sha256"]:
                         fail(f"{info.filename}: upstream changed it (sha256 {sha(body)[:12]}, patch based on {p['base_sha256'][:12]}); rebase or drop the patch")
                     body = open(os.path.join(ROOT, p["source"]), "rb").read()

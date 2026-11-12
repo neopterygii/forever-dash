@@ -1,4 +1,50 @@
 {
-	"about": "Patched hand-written addon files laid over upstream's release zip. Each entry: path in the zip, the sha256 of upstream's file it was based on, and the file in this repo that replaces it. The build fails if upstream's file no longer has base_sha256 (rebase the fix, or drop it once upstream ships it).",
-	"patches": []
+	"about": "Patched hand-written addon files laid over upstream's release zip. Each entry: path in the zip, the sha256 of upstream's file it was based on, and the file in this repo that replaces it. The build fails if upstream's file no longer has base_sha256 (rebase the fix, or drop it once upstream ships it). An entry with upstream_has is left out, with a warning, once upstream's file at that path contains that text: upstream ships the change itself. PATCHES.md says what each one is.",
+	"patches": [
+		{
+			"path": "Polestar/Nav/Arrow.lua",
+			"base_sha256": "5d4b4e931f0b32e89583e3466c949bc0453216cb0676bf052ff237da798f9ca2",
+			"source": "overlay/patches/Polestar/Nav/Arrow.lua",
+			"upstream_has": {
+				"path": "Polestar/Nav/Journey.lua",
+				"text": "function API.Follow("
+			}
+		},
+		{
+			"path": "Polestar/Nav/Bridges.lua",
+			"base_sha256": "d140f5188a19a9f1155cc8d4c6f0ecfc5174dbb0337b2768990cd41fe93daac4",
+			"source": "overlay/patches/Polestar/Nav/Bridges.lua",
+			"upstream_has": {
+				"path": "Polestar/Nav/Journey.lua",
+				"text": "function API.Follow("
+			}
+		},
+		{
+			"path": "Polestar/Nav/Journey.lua",
+			"base_sha256": "32905c8ae1b8c583fc4294eb6dc212dd6d656e935cc79492635528b1782be00d",
+			"source": "overlay/patches/Polestar/Nav/Journey.lua",
+			"upstream_has": {
+				"path": "Polestar/Nav/Journey.lua",
+				"text": "function API.Follow("
+			}
+		},
+		{
+			"path": "Polestar/Nav/Nav.lua",
+			"base_sha256": "ca6d1ae7dcd8acc22721159a5d1ac97ae87900e76e827f779f2bab4f16c4a3d6",
+			"source": "overlay/patches/Polestar/Nav/Nav.lua",
+			"upstream_has": {
+				"path": "Polestar/Nav/Journey.lua",
+				"text": "function API.Follow("
+			}
+		},
+		{
+			"path": "Polestar/UI/Options.lua",
+			"base_sha256": "958a3c23003353d9eed5bb3e3c6fa7c6798c97c693d3db67af4286ee9feb6147",
+			"source": "overlay/patches/Polestar/UI/Options.lua",
+			"upstream_has": {
+				"path": "Polestar/Nav/Journey.lua",
+				"text": "function API.Follow("
+			}
+		}
+	]
 }
