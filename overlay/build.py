@@ -3,13 +3,15 @@
 
     overlay/build.py <upstream-dir> <n> <out-dir>
 
-<upstream-dir> holds Polestar-<x.y.z>.zip, Polestar_Recorder-<x.y.z>.zip and SHA256SUMS from
-the upstream release. Writes Polestar-<x.y.z>.<n>.zip, Polestar_Recorder-<x.y.z>.<n>.zip and
+<upstream-dir> holds Polestar-<base>.zip, Polestar_Recorder-<base>.zip and SHA256SUMS from the
+upstream release, <base> being x.y.z or a hotfix's x.y.z.h. Our version is <x.y.z.h>.<n>, with
+h = 0 for a plain x.y.z, so that a hotfix always sorts above our builds of the release before it
+(0.3.8.1.1 > 0.3.8.0.3). Writes Polestar-<version>.zip, Polestar_Recorder-<version>.zip and
 SHA256SUMS to <out-dir>:
 - every upstream entry kept in order, with its timestamp and compression;
 - overlay/manifest.json patches applied, each only if upstream's file still has its base hash;
 - overlay/addons/* folders added to the Polestar zip;
-- every .toc's `## Version:` set to <x.y.z>.<n>.
+- every .toc's `## Version:` set to <version>.
 Exits non-zero on any mismatch. Stdlib only.
 """
 import hashlib, json, os, re, sys, zipfile
@@ -28,11 +30,11 @@ def main(src, n, out):
         h, name = line.split()
         sums[name.lstrip("*")] = h
     zips = sorted(k for k in sums if k.endswith(".zip"))
-    m = re.fullmatch(r"Polestar-(\d+\.\d+\.\d+)\.zip", next((z for z in zips if z.startswith("Polestar-")), ""))
+    m = re.fullmatch(r"Polestar-(\d+\.\d+\.\d+(?:\.\d+)?)\.zip", next((z for z in zips if z.startswith("Polestar-")), ""))
     if not m:
-        fail("no Polestar-<x.y.z>.zip in SHA256SUMS")
+        fail("no Polestar-<x.y.z>[.<h>].zip in SHA256SUMS")
     base = m.group(1)
-    version = f"{base}.{int(n)}"
+    version = f"{base if base.count('.') == 3 else base + '.0'}.{int(n)}"
     manifest = json.load(open(os.path.join(ROOT, "overlay", "manifest.json")))
     patches = {p["path"]: p for p in manifest["patches"]}
     applied = set()

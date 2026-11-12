@@ -1,5 +1,4 @@
-# The upstream Polestar release our addon builds are made from. Renovate bumps it when
-# fitzforge/polestar publishes a new addon release (renovate.json); a change here builds and
-# publishes v<version>.<n> (.github/workflows/dash-release.yml).
-# renovate: datasource=github-releases depName=fitzforge/polestar
-version: 0.3.7
+# The upstream Polestar release our addon builds are made from (x.y.z, or a hotfix's x.y.z.h).
+# .github/workflows/dash-release.yml checks fitzforge/polestar every 30 minutes and moves this to
+# its newest addon release; a change here builds and publishes v<x.y.z.h>.<n> (h = 0 for x.y.z).
+version: 0.3.7.2

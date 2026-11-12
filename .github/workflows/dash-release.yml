@@ -2,20 +2,26 @@ name: forever-dash addon release
 
 # Republishes an upstream Polestar release with our overlay (overlay/build.py: verified upstream
 # zips, patches checked against their base hashes, Polestar_DashSnapshot added, every TOC at
-# <x.y.z>.<n>) as release v<x.y.z>.<n> of this fork, with the asset names Polestar Client looks for
-# (Polestar-*, Polestar_Recorder-*, SHA256SUMS). The fork's client installs only from here.
+# <x.y.z.h>.<n>) as release v<x.y.z.h>.<n> of this fork, with the asset names Polestar Client looks
+# for (Polestar-*, Polestar_Recorder-*, SHA256SUMS). The fork's client installs only from here.
+# h is upstream's hotfix number (v0.3.7.2), 0 for a plain x.y.z; see overlay/build.py.
 #
-# Which upstream release: overlay/upstream.txt, which Renovate bumps when upstream publishes one
-# (renovate.json).
-# - push to dash changing it or the overlay: publishes the next build (n + 1; n = 1 for a new
-#   upstream version).
-# - push to a renovate/ branch: the same build without publishing, as Renovate's check before it
-#   merges the bump into dash.
+# Which upstream release: overlay/upstream.txt.
+# - every 30 minutes: if upstream (fitzforge/polestar) has a newer addon release than the pin,
+#   build it without publishing, then push the new pin to dash. A failed build pushes nothing and
+#   is not tried again until upstream releases or dash changes (or the failed run is re-run).
+# - push to dash changing the pin or the overlay: publishes the next build (n + 1; n = 1 for a new
+#   upstream version). The scheduled run's push lands here.
 # - by hand (workflow_dispatch): publishes if this upstream version has no build yet; `rebuild`
 #   makes the next n anyway.
+#
+# Secret DASH_SYNC_TOKEN (see dash-client-sync.yml) pushes the pin: a push with the default token
+# would start neither the publishing run nor dash-image.yml.
 on:
+  schedule:
+    - cron: "7,37 * * * *"
   push:
-    branches: [dash, "renovate/**"]
+    branches: [dash]
     paths: ["overlay/**", "services/dash/addon-test/**", ".github/workflows/dash-release.yml"]
   workflow_dispatch:
     inputs:
@@ -26,12 +32,14 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: dash-release
 
 jobs:
   release:
+    if: github.event_name != 'schedule' || github.repository == 'neopterygii/forever-dash'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -39,34 +47,63 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Lua 5.1
-        run: sudo apt-get update -q && sudo apt-get install -y -q lua5.1
-
-      - name: Snapshot addon tests
-        run: lua5.1 services/dash/addon-test/snapshot_test.lua && lua5.1 services/dash/addon-test/people_test.lua
-
       - name: Which release
         id: which
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          TOKEN: ${{ secrets.DASH_SYNC_TOKEN }}
           REBUILD: ${{ inputs.rebuild || 'false' }}
         run: |
+          re='^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'
           base="$(sed -n 's/^version:[[:space:]]*//p' overlay/upstream.txt)"
-          [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::overlay/upstream.txt has no version"; exit 1; }
-          have="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | .tag_name | select(startswith(\"v${base}.\")) | ltrimstr(\"v${base}.\") | tonumber] | max // 0")"
+          [[ "$base" =~ $re ]] || { echo "::error::overlay/upstream.txt has no version"; exit 1; }
+          bump=false
+          if [ "$EVENT" = schedule ]; then
+            # Upstream also tags client-v*, lib-v*, forge-v* and data releases: only vX.Y.Z[.H] is an addon release.
+            read -r newest published < <(gh api 'repos/fitzforge/polestar/releases?per_page=100' --jq '.[] | select(.draft | not) | select(.prerelease | not) | select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$")) | "\(.tag_name | ltrimstr("v")) \(.published_at)"' | sort -V | tail -1)
+            [[ "$newest" =~ $re ]] || { echo "::error::no published addon release upstream"; exit 1; }
+            if [ "$newest" = "$base" ] || [ "$(printf '%s\n' "$base" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+              echo "Upstream's newest is $newest, the pin is $base; nothing to do."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            failed="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/dash-release.yml/runs?event=schedule&status=failure&per_page=1" --jq '.workflow_runs[0].run_started_at // empty')"
+            if [ -n "$failed" ] && [ "$(date -d "$failed" +%s)" -gt "$(date -d "$published" +%s)" ] && [ "$(date -d "$failed" +%s)" -gt "$(git log -1 --format=%ct)" ]; then
+              echo "::warning::$newest failed to build at $failed and nothing has changed since; fix dash or re-run that run."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [ -n "$TOKEN" ] || { echo "::error::set the DASH_SYNC_TOKEN secret (see the top of this file)"; exit 1; }
+            sed -i "s/^version:.*/version: $newest/" overlay/upstream.txt
+            base="$newest"
+            bump=true
+          fi
+          full="$base"
+          [[ "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && full="$base.0"
+          have="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | .tag_name | select(startswith(\"v${full}.\")) | ltrimstr(\"v${full}.\") | select(test(\"^[0-9]+\$\")) | tonumber] | max // 0")"
           if [ "$EVENT" = workflow_dispatch ] && [ "$have" -gt 0 ] && [ "$REBUILD" != "true" ]; then
-            echo "v${base}.${have} is out already; nothing to do."
+            echo "v${full}.${have} is out already; nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           n=$((have + 1))
           publish=true
-          [ "$GITHUB_REF_NAME" = dash ] || publish=false
+          [ "$GITHUB_REF_NAME" = dash ] && [ "$bump" = false ] || publish=false
           echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "n=$n" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "Building v${base}.${n} (publish: $publish)"
+          echo "Building v${full}.${n} from upstream $base (publish: $publish, new pin: $bump)"
+
+      - name: Lua 5.1
+        if: steps.which.outputs.skip != 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q lua5.1
+
+      - name: Snapshot addon tests
+        if: steps.which.outputs.skip != 'true'
+        run: lua5.1 services/dash/addon-test/snapshot_test.lua && lua5.1 services/dash/addon-test/people_test.lua
 
       - name: Upstream zips
         if: steps.which.outputs.skip != 'true'
@@ -84,14 +121,26 @@ jobs:
         if: steps.which.outputs.skip != 'true'
         run: python3 overlay/build.py upstream "${{ steps.which.outputs.n }}" out
 
+      - name: Push the new pin
+        if: steps.which.outputs.bump == 'true'
+        env:
+          TOKEN: ${{ secrets.DASH_SYNC_TOKEN }}
+          BASE: ${{ steps.which.outputs.base }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "dash: Polestar $BASE" -m "Pinned by .github/workflows/dash-release.yml." overlay/upstream.txt
+          git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/dash
+
       - name: Publish
         if: steps.which.outputs.skip != 'true' && steps.which.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           BASE: ${{ steps.which.outputs.base }}
+          FULL: ${{ steps.which.outputs.full }}
           N: ${{ steps.which.outputs.n }}
         run: |
-          tag="v$BASE.$N"
+          tag="v$FULL.$N"
           cat > notes.md <<EOF
           Polestar $BASE (upstream's release, unchanged apart from the TOC versions) with forever-dash's
           Polestar_DashSnapshot addon, build $N. Installed and updated by Forever Dash Client.
