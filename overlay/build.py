@@ -39,6 +39,7 @@ def main(src, n, out):
     manifest = json.load(open(os.path.join(ROOT, "overlay", "manifest.json")))
     patches = {p["path"]: p for p in manifest["patches"]}
     applied = set()
+    shipped_all = set()
     os.makedirs(out, exist_ok=True)
     new_sums = []
     report = []
@@ -57,6 +58,7 @@ def main(src, n, out):
             for p in manifest["patches"]
             if "upstream_has" in p and p["upstream_has"]["path"] in names and p["upstream_has"]["text"].encode() in zin.read(p["upstream_has"]["path"])
         }
+        shipped_all |= shipped
         with zipfile.ZipFile(out_path, "w") as zout:
             for info in zin.infolist():
                 body = zin.read(info)
@@ -101,7 +103,8 @@ def main(src, n, out):
                         changed += 1
         new_sums.append(f"{sha(open(out_path, 'rb').read())}  {out_name}")
         report.append(f"{out_name}: {len(zin.infolist())} upstream entries, {changed} written differently or added")
-    missing = set(patches) - applied
+    # A patch upstream ships needs no file of its own: upstream may have moved or removed it.
+    missing = set(patches) - applied - shipped_all
     if missing:
         fail(f"patches whose file is not in the zips: {sorted(missing)}")
     open(os.path.join(out, "SHA256SUMS"), "w").write("\n".join(new_sums) + "\n")
