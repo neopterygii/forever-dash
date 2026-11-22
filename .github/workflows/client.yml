@@ -286,8 +286,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#client-v}"
+          title="Polestar Client $version (beta)"
+          # forever-dash: our own client versions; synced notes name the upstream release they bring in.
+          if [ "$GITHUB_REPOSITORY" = neopterygii/forever-dash ]; then
+            upstream="$(grep -oP -m1 'Brings in \[Polestar Client \K[0-9.]+' notes.md || true)"
+            title="Forever Dash Client $version${upstream:+ (Polestar Client $upstream)}"
+          fi
           gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag --latest=false \
-            --title "Polestar Client $version (beta)" --notes-file notes.md
+            --title "$title" --notes-file notes.md
 
       # forever-dash: no hand check before players get it (dash-client-sync.yml tags with no one in
       # the loop); still never the repository's latest, which stays the addon's.
