@@ -74,7 +74,8 @@ fn quests_in_turn_in_order_carry_the_character_over_a_level_the_client_s_xp_to_l
 
 #[test]
 fn a_quest_far_below_gives_its_share_at_the_level_reached_when_it_is_turned_in() {
-	// At 26 the level 17 quest is 9 below: 20%. The level 20 one is 6 below: 80%.
+	// At 26 the level 17 quest is 9 below: half, Forever's floor from 8 below (players' recordings,
+	// forge-sim's xp::SHARE test). The level 20 one is 6 below: 80%.
 	let s = run(
 		json!({ "level": 26, "xp": 0, "class": "MAGE", "faction": "Alliance" }),
 		json!([
@@ -84,7 +85,7 @@ fn a_quest_far_below_gives_its_share_at_the_level_reached_when_it_is_turned_in()
 		]),
 		&[],
 	);
-	assert_eq!(s["xp"], 200 + 800 + 1000);
+	assert_eq!(s["xp"], 500 + 800 + 1000);
 	assert_eq!(s["reduced"], 2);
 	assert_eq!(s["quests"], 3);
 	// The order counts: a level gained on the way reduces what comes after.
@@ -114,6 +115,37 @@ fn done_quests_another_class_s_and_those_with_no_xp_known_are_left_out_and_count
 	);
 	assert_eq!(s["xp"], 1000);
 	assert_eq!(json!([s["quests"], s["done"], s["other"], s["unknown"]]), json!([1, 1, 1, 1]));
+}
+
+// A quest the character may not take by class or race (Dungeons.QuestFor's verdict, which reads the Codex
+// masks the page greys it out by) is left out like another class's, not counted in the dungeon's XP.
+#[test]
+fn a_blocked_quest_is_left_out_like_another_class_s() {
+	let s = run(
+		json!({ "level": 20, "xp": 0, "class": "DRUID", "faction": "Horde" }),
+		json!([
+			{ "id": 1, "level": 20, "xp": 1000 },
+			{ "id": 2, "level": 20, "xp": 1000, "blocked": true }
+		]),
+		&[],
+	);
+	assert_eq!(s["xp"], 1000);
+	assert_eq!(json!([s["quests"], s["other"]]), json!([1, 1]));
+}
+
+#[test]
+fn quests_named_a_group_are_summed_per_group_with_the_highest_min_level() {
+	let s = run(
+		json!({ "level": 20, "xp": 0, "class": "DRUID", "faction": "Horde" }),
+		json!([
+			{ "id": 1, "level": 20, "xp": 1000, "group": "ready" },
+			{ "id": 2, "level": 22, "xp": 700, "group": "level", "minLevel": 21 },
+			{ "id": 3, "level": 23, "xp": 800, "group": "level", "minLevel": 22 },
+			{ "id": 4, "level": 20, "xp": null, "group": "ready" }
+		]),
+		&[],
+	);
+	assert_eq!(s["groups"], json!({ "ready": { "n": 1, "xp": 1000 }, "level": { "n": 2, "xp": 1500, "need": 22 } }));
 }
 
 #[test]
@@ -288,6 +320,41 @@ fn a_stray_drop_chance_beside_a_dropper_with_none_known_is_not_estimated_1697() 
 	// 50, every chance known. 603: 1 / 2% = 50, its own mob. 604: 4 / 40% = 10, not a stray.
 	assert_eq!(s["killsUnknown"], 0);
 	assert_eq!(s["kills"], 50 + 50 + 50 + 10);
+}
+
+// Badlands' Lotwil takes a Frost Oil only from a player who carries one: the step shows only while the bags hold it
+// (`when has`), and nothing is farmed for it. Its one dropper at 0.02% made it "5,000 kills" and the 38-39 guide
+// "ends at 50". A step's `when has` covers that many of a loot goal's items; the rest still count, and a `!has`
+// covers none.
+#[test]
+fn a_loot_goal_for_items_the_step_s_when_has_needs_in_the_bags_asks_no_kills_for_them() {
+	let s = lua(&[
+		r#"
+local guide = { id = "carry", minLevel = 38, steps = {
+	{ when = { { k = "has", n = 1, item = 700 } }, goals = { { t = "collect", quest = 40, oi = 1, item = 700, count = 1 } } },
+	{ when = { { k = "has", n = 3, item = 701 } }, goals = { { t = "collect", quest = 41, oi = 1, item = 701, count = 5 } } },
+	{ when = { { k = "has", n = 1, item = 702, neg = true } }, goals = { { t = "collect", quest = 42, oi = 1, item = 702, count = 1 } } },
+	{ when = { { k = "has", n = 1, item = 700 } }, goals = { { t = "collect", quest = 43, oi = 1, item = 703, count = 2 } } },
+} }
+Polestar.Guides.Get = function(id) return id == "carry" and guide or nil end
+local NPCS = { [200] = { level = 38 } }
+local ITEMS = {
+	[700] = { sources = { { type = "drop", npc = 200, chance = 0.02 } } },
+	[701] = { sources = { { type = "drop", npc = 200, chance = 50 } } },
+	[702] = { sources = { { type = "drop", npc = 200, chance = 50 } } },
+	[703] = { sources = { { type = "drop", npc = 200, chance = 20 } } },
+}
+Polestar.Codex = { IsLoaded = function() return true end, Quest = function() return nil end,
+	Npc = function(id) return NPCS[id] end, Item = function(id) return ITEMS[id] end }
+"#,
+		r#"emit(Lv.ForGuide("carry", { level = 38, xp = 0, class = "WARRIOR", race = "Orc", faction = "Horde" }))"#,
+	]
+	.join("\n"))
+	.remove(0);
+	// 700: carried, none (not 5,000). 701: 3 of 5 carried, 2 / 50% = 4. 702: `!has`, 1 / 50% = 2. 703: another
+	// item than the one carried, 2 / 20% = 10.
+	assert_eq!(s["killsUnknown"], 0);
+	assert_eq!(s["kills"], 4 + 2 + 10);
 }
 
 // A step change moves every span's start (the pace line, its hard-quest look, While-here's planned levels): the

@@ -217,11 +217,12 @@ test('generated TravelData.lua loads under Lua 5.1 and the addon planner routes 
 		const walking = planRoute({ ...common, known: [] });
 		assert.deepEqual(walking.map((l) => l.kind), ['walk']);
 		// A flight master not learnt yet is walked to, learnt and flown from, to a known one (#1174:
-		// beside Ironforge's, knowing Menethil Harbor, the planner walked through Loch Modan) ...
+		// beside Ironforge's, knowing Menethil Harbor, the planner walked through Loch Modan); its leg
+		// says to learn it first (#1795) ...
 		const learning = planRoute({ ...common, known: ['Stormwind'] });
 		assert.deepEqual(learning.map((l) => [l.kind, l.label]), [
 			['walk', 'Walk to the flight master'],
-			['fly', 'Fly to Stormwind'],
+			['fly', 'Learn the flight path at Sentinel Hill, then fly to Stormwind'],
 			['walk', 'Stormwind City 60, 60'],
 		]);
 		assert.equal(learning[1].from.short, 'Sentinel Hill');
@@ -243,6 +244,9 @@ test('generated TravelData.lua loads under Lua 5.1 and the addon planner routes 
 		const ok = cli(...ends, '--known', 'Sentinel Hill, Westfall', '--known', 'Stormwind', '--json');
 		assert.equal(ok.status, 0, ok.stderr);
 		assert.deepEqual(JSON.parse(ok.stdout).map((l) => l.kind), ['walk', 'fly', 'walk']);
+		const hostile = cli(...ends, '--faction', 'Horde', '--json');
+		assert.equal(hostile.status, 1, hostile.stderr);
+		assert.equal(hostile.stdout.trim(), 'null', 'Horde cannot walk into Stormwind');
 		// No network at all: Kalimdor cannot be reached from Westfall.
 		const empty = path.join(dir, 'Empty.lua');
 		fs.writeFileSync(empty, '-- no travel data\n');

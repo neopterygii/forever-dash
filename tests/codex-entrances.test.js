@@ -8,6 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { instanceFacts, buildInstances, chooseEntrance, loadEntranceTable } = require('../tools/lib/codex/instances');
 const { emitPack } = require('../tools/lib/codex/pack');
+const { isSourceCitation } = require('../tools/lib/codex/web');
 
 // Westfall's live frame: world x north / y west -> map percent.
 const WESTFALL = { c: 0, left: 2000, right: -1000, top: -9000, bottom: -12000 };
@@ -27,6 +28,50 @@ test('chooseEntrance: recording > curated table > guide marker > corpse point (a
 	assert.equal(chooseEntrance({ ...base }), null, 'nothing known: no entrance');
 });
 
+// WorldFloor (the world gate's Wetlands door walks): the Excavation Site's door lies in the hillside 100 yd over
+// Thelgen Rock; the table's z rides along when the chosen point lies within 30 yd of its entry's, and the city gate
+// takes the same doors (gate.js doorsOf) for walks that end going in.
+test("chooseEntrance: a table entry's door floor rides along within 30 yd; the gate's doors are those entries as world points", () => {
+	const WETLANDS = { c: 0, left: -389.583, right: -4525, top: -2147.917, bottom: -4904.167 };
+	const door = { key: 'excavation-site-wetlands', map: 1437, x: 50.7, y: 61.1, z: 140, source: 'https://example.org' };
+	const at = { name: 'Excavation Site: Wetlands', zones: {}, frames: { 1437: WETLANDS }, prefer: [1437], table: door };
+	assert.equal(chooseEntrance(at).z, 140);
+	assert.equal(chooseEntrance({ ...at, recorded: [{ map: 1437, x: 50.72, y: 61.12, n: 119 }] }).z, 140, 'a recording beside it');
+	assert.equal(chooseEntrance({ ...at, recorded: [{ map: 1437, x: 47.8, y: 56.2, n: 3 }] }).z, undefined, '185 yd off: none');
+	const { doorsOf } = require('../tools/lib/nav/city/gate');
+	const [d] = doorsOf({ entrances: [door, { key: 'deadmines', map: 1436, x: 42.5, y: 71.7 }] }, { 1437: WETLANDS });
+	assert.deepEqual([d.c, Math.round(d.wx), Math.round(d.wy), d.z], [0, -3832, -2486, 140]);
+});
+
+test('a continent recording must land at the dungeon’s known zone', () => {
+	const frames = {
+		1415: { c: 0, left: 16000, right: -19199.9, top: 7466.6, bottom: -16000 },
+		1424: { c: 0, left: 1066.667, right: -2133.333, top: 400, bottom: -1733.333 },
+		1435: { c: 0, left: -2222.917, right: -4516.667, top: -9620.833, bottom: -11150 },
+	};
+	const temple = { name: 'Sunken Temple', frames, table: { map: 1435, x: 69.9, y: 53.5 } };
+	const swamp = { map: 1435, x: 61.51, y: 49.32, n: 3 };
+	assert.deepEqual(chooseEntrance({ ...temple, recorded: [{ map: 1415, x: 45.17, y: 33.14, n: 5 }, swamp] }), { ...temple.table, f: null });
+	assert.deepEqual(chooseEntrance({ ...temple, recorded: [swamp] }), { map: 1435, x: 61.5, y: 49.3, f: null });
+	assert.deepEqual(chooseEntrance({ ...temple, recorded: [{ map: 1415, x: 55.778, y: 76.02984, n: 3 }] }), { map: 1435, x: 61.5, y: 49.3, f: null });
+	const ocean = [{ map: 1415, x: 1, y: 1, n: 8 }];
+	assert.deepEqual(chooseEntrance({ ...temple, recorded: ocean }), { ...temple.table, f: null }, 'no zone contains this point');
+	assert.equal(chooseEntrance({ ...temple, table: null, prefer: [1435], recorded: ocean }), null, 'a known zone also rules out the ocean without a table entry');
+});
+
+test('zone recordings must fall inside the entrance frame, even when map IDs differ', () => {
+	const frames = {
+		1426: { c: 0, left: 1802.083, right: -3122.917, top: -3877.083, bottom: -7160.417 },
+		1427: { c: 0, left: -322.917, right: -2554.167, top: -6100, bottom: -7587.5 },
+	};
+	const table = { map: 1427, x: 34.8, y: 85.3 };
+	const choose = (y) => chooseEntrance({ name: 'Blackrock Depths', table, frames, recorded: [{ map: 1426, x: 46.78, y, n: 1 }] });
+	assert.deepEqual(choose(50.13), { ...table, f: null }, 'the reported point is north of Searing Gorge');
+	assert.deepEqual(choose(85), { map: 1426, x: 46.8, y: 85, f: null }, 'the two maps overlap here; keep the recording');
+	frames[1426].c = 1;
+	assert.deepEqual(choose(85), { ...table, f: null }, 'overlapping coordinates on a different continent do not count');
+});
+
 test('the curated table: one entry per instance, each placed on a zone map with a public source', () => {
 	const t = loadEntranceTable();
 	const entries = Object.values(t);
@@ -34,7 +79,7 @@ test('the curated table: one entry per instance, each placed on a zone map with 
 	for (const e of entries) {
 		assert.ok(Number.isInteger(e.map) && e.map > 0, `${e.key}: uiMap id`);
 		assert.ok(e.x > 0 && e.x < 100 && e.y > 0 && e.y < 100, `${e.key}: map percent`);
-		assert.match(e.source, /^https:\/\//, `${e.key}: source URL`);
+		assert.ok(typeof e.source === 'string' ? /^https:\/\//.test(e.source) : isSourceCitation(e.source), `${e.key}: a source URL or a source cited the corrections' way`);
 		assert.ok(e.note, `${e.key}: note`);
 	}
 });
@@ -91,4 +136,14 @@ test('pack: the Alliance way in follows the entrance', () => {
 	const codex = { meta: { schema: 1 }, items: {}, npcs: {}, objects: {}, quests: {}, instances: { 'city-of-dalaran': inst }, zones: {}, factions: {}, spells: {}, frames: {} };
 	const text = Object.values(emitPack(codex, { version: '0', build: 'test' })).join('\n');
 	assert.match(text, /1416,85,592,,,1416,147,630/);
+});
+
+// #1832: The Drowned City's way in is where players' recordings enter it: Sunken Hollow, due west of Grom'gol.
+test("the curated table: The Drowned City's way in is where players enter it, at Sunken Hollow west of Grom'gol (#1832)", () => {
+	const d = loadEntranceTable()['the-drowned-city'];
+	assert.ok(d, 'an entry for the Forever dungeon');
+	assert.equal(d.instance, 2970, 'the client Map id players enter');
+	assert.deepEqual([d.map, d.x, d.y], [1434, 21.6, 27.7], 'Stranglethorn Vale, where players enter');
+	assert.equal(d.source.kind, 'recording', 'cited from players\' recordings');
+	assert.ok(isSourceCitation(d.source));
 });

@@ -15,7 +15,14 @@
 -- where it starts, as the guide menu's details) with "Next: The Barrens
 -- (12–16)" on it, then "Carried to later guides": the quests still in the
 -- log that a later guide of the chain hands in (Engine.CarriedQuests), each
--- with that guide ("Sceptre of Light · Badlands"), so the player keeps them.
+-- with that guide ("Sceptre of Light · Badlands"), so the player keeps them,
+-- and the accepts the guide passed for the character's level, kept for a
+-- later guide (Engine.WaitingQuests: "Moontouched Wildkin · at level 52").
+-- Then "Not part of your route": the quests in the log no guide of the route
+-- takes, works or hands in (RoutePlan.OffRoute, read when the window opens),
+-- six at most, and "Keep or abandon them", which opens their list with an
+-- Abandon button each (UI.ShowQuestRoom "offroute"); nothing is abandoned
+-- without the game's own confirmation.
 -- The footer holds the buttons, the primary on the right:
 --   next guide     Start The Barrens (Engine.StartNext: in the same tab)
 --                  Not now, or Back to step 13 (the guide stays; the guide
@@ -45,6 +52,8 @@ UI.GuideEnd = GE
 
 local WIDTH = 460
 local PAD = 24
+-- The emblem and the footer; the house look's own (Theme.House "endEmblem",
+-- "dialogFoot", on the 4-point rhythm) read as the window is laid out.
 local EMBLEM = 44
 local EMBLEM_Y = 26 -- the emblem's top below the header's
 local HEAD_BOTTOM = 24 -- under the heading's last line
@@ -81,6 +90,9 @@ function GE.Model(info)
 		end
 	end
 	m.carried = E and E.CarriedQuests and E.CarriedQuests(g.id) or {}
+	m.waiting = E and E.WaitingQuests and E.WaitingQuests(g.id) or {}
+	local P = ns.RoutePlan
+	m.offRoute = P and P.OffRoute and P.OffRoute(g.id) or {}
 	return m
 end
 
@@ -118,33 +130,13 @@ local function build()
 	local head = CreateFrame("Frame", nil, F)
 	head:SetPoint("TOPLEFT", F, "TOPLEFT", 1, -1)
 	head:SetPoint("TOPRIGHT", F, "TOPRIGHT", -1, -1)
-	head:EnableMouse(true)
-	head:RegisterForDrag("LeftButton")
-	head:SetScript("OnDragStart", function() F:StartMoving() end)
-	head:SetScript("OnDragStop", function()
-		F:StopMovingOrSizing()
-		-- Where the player put it is where it opens (and rises to) next time.
+	-- Where the player put it is where it opens (and rises to) next time.
+	ns.DragWindow(head, F, { onStop = function()
 		local point, _, relPoint, x, y = F:GetPoint(1)
 		if point then Anim.Anchor(F, point, UIParent, relPoint, x, y) end
-	end)
+	end })
 	F.Header = head
-	F.Night = head:CreateTexture(nil, "BACKGROUND", nil, -8)
-	F.Night:SetTexture(Theme.Media("white"))
-	F.Night:SetAllPoints(head)
-	W.Painter(F.Night, function(t)
-		t:SetShown(Theme.SkinKey() == "polestar")
-		local tr, tg, tb = Theme.Color("scrim")
-		local br, bg, bb = Theme.Color("bg")
-		if t.SetGradient and CreateColor then
-			t:SetVertexColor(1, 1, 1, 1)
-			t:SetGradient("VERTICAL", CreateColor(br, bg, bb, 1), CreateColor(tr, tg, tb, 1))
-		else
-			t:SetVertexColor(br, bg, bb, 1)
-		end
-	end)
-	if W.Haze then F.Haze = W.Haze(head, { width = WIDTH * 0.8, height = 120, sub = -6 }) end
-	F.Band = Theme.Band(head, "BACKGROUND", -5)
-	F.Band:SetAllPoints(head)
+	F.Night, F.Haze, F.Band = W.Night(head, { width = WIDTH * 0.8, height = 120, sub = -6 })
 	F.HeadRule = W.Divider(head)
 	F.HeadRule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
 	F.HeadRule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
@@ -175,6 +167,7 @@ local function build()
 	F.Undone:SetPoint("TOP", F.Title, "BOTTOM", 0, -8)
 	F.Close = W.IconButton(head, "close", 28, L["Close"], function() GE.Later() end, 14)
 	F.Close:SetPoint("TOPRIGHT", head, "TOPRIGHT", -12, -12)
+	W.FrameClose(F, F.Close)
 
 	-- Body: the next guide's zone painting (a dark hairline round it) with
 	-- its name and levels over the fade, or a line saying what to do.
@@ -222,6 +215,19 @@ local function build()
 	F.Carried:SetJustifyH("LEFT")
 	F.Carried:SetWordWrap(true)
 	F.Carried:SetSpacing(3)
+	F.OffHead = W.Text(F, "label", "text")
+	F.OffHead:SetWidth(WIDTH - PAD * 2)
+	F.OffHead:SetJustifyH("LEFT")
+	F.OffHead:SetText(L["Not part of your route"])
+	F.Off = W.Text(F, "note", "textDim")
+	F.Off:SetWidth(WIDTH - PAD * 2)
+	F.Off:SetJustifyH("LEFT")
+	F.Off:SetWordWrap(true)
+	F.Off:SetSpacing(3)
+	F.OffLink = W.Link(F, L["Keep or abandon them"], function()
+		if shown then UI.ShowQuestRoom("offroute", shown.id) end
+	end, { role = "note" })
+	F.OffLink.psTip = L["Each with its Abandon button, which asks in the game's own window first."]
 
 	-- Footer: the second button, then the primary on the right.
 	local foot = CreateFrame("Frame", nil, F)
@@ -259,6 +265,10 @@ local function build()
 end
 
 local function layout(m)
+	local emblem, footH = Theme.House("endEmblem") or EMBLEM, Theme.House("dialogFoot") or FOOT_H
+	F.Emblem:SetSize(emblem, emblem)
+	F.Glow:SetSize(emblem * 3, emblem * 3)
+	F.Footer:SetHeight(footH)
 	paintTitle(F.Title)
 	if m.complete then
 		F.Undone:Hide()
@@ -266,7 +276,7 @@ local function layout(m)
 		F.Undone:SetText(m.undone == 1 and L["1 step was left undone."] or format(L["%d steps were left undone."], m.undone))
 		F.Undone:Show()
 	end
-	local headH = EMBLEM_Y + EMBLEM + 16 + F.Title:GetStringHeight()
+	local headH = EMBLEM_Y + emblem + 16 + F.Title:GetStringHeight()
 	if F.Undone:IsShown() then headH = headH + 8 + F.Undone:GetStringHeight() end
 	headH = floor(headH + HEAD_BOTTOM + 0.5)
 	F.Header:SetHeight(headH)
@@ -293,8 +303,11 @@ local function layout(m)
 		y = y + F.Text:GetStringHeight()
 	end
 
-	-- The quests a later guide hands in: keep them.
-	local list = m.carried or {}
+	-- The quests a later guide hands in: keep them. Then the accepts waiting
+	-- for the character's level.
+	local list = {}
+	for _, c in ipairs(m.carried or {}) do list[#list + 1] = c end
+	for _, w in ipairs(m.waiting or {}) do list[#list + 1] = { title = format(L["%s · at level %d"], w.title, w.level) } end
 	if #list > 0 then
 		local G, lines = ns.Guides, {}
 		for i, c in ipairs(list) do
@@ -302,7 +315,7 @@ local function layout(m)
 				lines[#lines + 1] = format(L["+%d more"], #list - CARRIED_SHOWN)
 				break
 			end
-			local later = G and G.Get(c.guideId)
+			local later = c.guideId and G and G.Get(c.guideId)
 			lines[i] = later and format(L["%s · %s"], c.title, UI.GuideLabel(later)) or c.title
 		end
 		F.CarriedHead:SetText(L["Carried to later guides"])
@@ -317,6 +330,34 @@ local function layout(m)
 	else
 		F.CarriedHead:Hide()
 		F.Carried:Hide()
+	end
+
+	-- The quests no guide of the route uses: the player keeps or abandons them.
+	local off = m.offRoute or {}
+	if #off > 0 then
+		local lines = {}
+		for i, c in ipairs(off) do
+			if i > CARRIED_SHOWN then
+				lines[#lines + 1] = format(L["+%d more"], #off - CARRIED_SHOWN)
+				break
+			end
+			lines[i] = c.title or ("#" .. c.quest)
+		end
+		F.OffHead:ClearAllPoints()
+		F.OffHead:SetPoint("TOPLEFT", F, "TOPLEFT", PAD, -(y + 16))
+		F.OffHead:Show()
+		F.Off:SetText(table.concat(lines, "\n"))
+		F.Off:ClearAllPoints()
+		F.Off:SetPoint("TOPLEFT", F.OffHead, "BOTTOMLEFT", 0, -6)
+		F.Off:Show()
+		F.OffLink:ClearAllPoints()
+		F.OffLink:SetPoint("TOPLEFT", F.Off, "BOTTOMLEFT", 0, -4)
+		F.OffLink:Show()
+		y = y + 16 + F.OffHead:GetStringHeight() + 6 + F.Off:GetStringHeight() + 4 + 20
+	else
+		F.OffHead:Hide()
+		F.Off:Hide()
+		F.OffLink:Hide()
 	end
 
 	if m.choose then
@@ -336,7 +377,7 @@ local function layout(m)
 		local no = E and E.StepNumberOf and g and (E.StepNumberOf(g, m.live)) or m.live
 		W.SetButtonText(F.Later, format(L["Back to step %d"], no))
 	end
-	F:SetHeight(floor(y + PAD + FOOT_H + 0.5))
+	F:SetHeight(floor(y + PAD + footH + 0.5))
 	if W.LayoutRim then W.LayoutRim(F) end
 end
 

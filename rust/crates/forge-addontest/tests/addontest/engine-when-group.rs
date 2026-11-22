@@ -124,6 +124,17 @@ fn unanswered_the_route_waits_at_the_group_step_and_asks_about_its_quest() {
 	assert_eq!(out[0], json!({ "at": 1, "q": 7, "title": "Kobold Camp Cleanup", "answer": false }));
 }
 
+// #3015 (Tilman, a German client): the group question named the quest by the guide's English title ("Gleaning Our
+// Future") while its goal line read the client's own title. The question and the Options list take the client's.
+#[test]
+fn the_group_question_and_the_list_name_the_quest_in_the_client_s_language_3015() {
+	// A German client: Names reads the client's own titles only off an English client.
+	let before = r#"function GetLocale() return "deDE" end
+stub.world.titles[7] = "Säuberung des Koboldlagers""#;
+	let out = run(Opts { before, ..opts(r#"local q, title = E.GroupQuestion(); local list = E.GroupQuests(); emit({ q = q, title = title, listed = list[1] and list[1].title or false })"#) });
+	assert_eq!(out[0], json!({ "q": 7, "title": "Säuberung des Koboldlagers", "listed": "Säuberung des Koboldlagers" }));
+}
+
 #[test]
 fn a_step_whose_goals_are_done_still_waits_for_the_answer() {
 	// Step 1 asks about A Threat Within, already in the log: its accept is done.
@@ -135,6 +146,49 @@ fn a_step_whose_goals_are_done_still_waits_for_the_answer() {
 	let out = run(Opts { guide: &guide, ..opts(r#"emit(at()); E.AnswerGroup(783, "do"); flush(); emit(at())"#) });
 	assert_eq!(out[0], 1);
 	assert_eq!(out[1], 3);
+}
+
+// Barrens, Ratchet (Fitz, 0.3.7.1): WANTED: Bruuz (here A Threat Within, 783, in the log) taken at the poster by
+// hand before the route's step for it. Every later step with work for it (the kill, the hand-in) is a `when group`
+// step that asks in its turn, so the accept step, its work done, passes unanswered, and so does the next step whose
+// accept is done (Raptor Horns, here 7 in the log too); the question waits at the first step that needs the answer.
+// A later step without the question (a_step_whose_goals_are_done_still_waits_for_the_answer) still holds it.
+const TAKEN_BY_HAND_GUIDE: &str = r#"
+Polestar.RegisterGuide({
+	id = "test/group", pack = "test", title = "Group", minLevel = 1, maxLevel = 10,
+	steps = {
+		{ title = "WANTED poster", when = { { k = "group", q = 783 } }, goals = {
+			{ t = "accept", quest = 783, title = "A Threat Within", npc = 197, npcName = "Marshal McBride", map = 1429, x = 48.9, y = 41.6 },
+		} },
+		{ title = "Raptor Horns", goals = {
+			{ t = "accept", quest = 7, title = "Kobold Camp Cleanup", npc = 197, npcName = "Marshal McBride", map = 1429, x = 48.9, y = 41.6 },
+		} },
+		{ title = "Hand in Raptor Horns", goals = {
+			{ t = "turnin", quest = 7, title = "Kobold Camp Cleanup", npc = 197, npcName = "Marshal McBride", map = 1429, x = 48.9, y = 41.6 },
+		} },
+		{ title = "Bruuz", when = { { k = "group", q = 783 } }, goals = {
+			{ t = "complete", quest = 783, title = "A Threat Within", map = 1429, x = 50, y = 50 },
+		} },
+		{ title = "Gazlowe", when = { { k = "group", q = 783 } }, goals = {
+			{ t = "turnin", quest = 783, title = "A Threat Within", npc = 197, npcName = "Marshal McBride", map = 1429, x = 48.9, y = 41.6 },
+		} },
+	},
+})
+"#;
+
+#[test]
+fn a_group_quest_taken_by_hand_passes_its_done_accept_step_unanswered_when_every_later_step_for_it_asks() {
+	let out = run(Opts {
+		guide: TAKEN_BY_HAND_GUIDE,
+		before: "stub.world.onQuest(7, {}); stub.world.onQuest(783, { { required = 1, fulfilled = 0 } })",
+		..opts(
+			r#"emit({ at = at(), q = E.GroupQuestion() or false, s1 = E.GetStepView(1).status, s2 = E.GetStepView(2).status })
+			stub.world.turnIn(7); flush(); flush()
+			emit({ at = at(), q = E.GroupQuestion() or false })"#,
+		)
+	});
+	assert_eq!(out[0], json!({ "at": 3, "q": false, "s1": "done", "s2": "done" }), "on to the hand-in, nothing asked yet");
+	assert_eq!(out[1], json!({ "at": 4, "q": 783 }), "the kill step asks");
 }
 
 #[test]
@@ -276,7 +330,7 @@ Polestar.RegisterGuide({ id = "test/h", pack = "test", title = "H", faction = "H
 	let out = emitted(&RunAddon {
 		stubs: vec!["stub_world.lua"],
 		before: WORLD.into(),
-		addons: vec![Addon::files("Polestar", &["Core/Core.xml", "Theme/Theme.xml", "Dungeons/Dungeons.xml"])],
+		addons: vec![Addon::files("Polestar", &["Core/Core.xml", "Theme/Theme.xml", "Dungeons/Dungeons.xml", "../Polestar_Options/Dungeons/Options.lua"])],
 		script: [
 			TEST_PACK,
 			TEST_SOURCE,
@@ -287,9 +341,10 @@ Polestar.RegisterGuide({ id = "test/h", pack = "test", title = "H", faction = "H
 			for _, spec in ipairs(Polestar.Widgets.OptionsRegistry) do
 				if spec.page == "Discovery" and spec.tab == "Group quests" then
 					for _, c in ipairs(spec.controls) do
+						-- Not answered (Group quests asks): nil.
 						local before = c.get()
 						c.set(true)
-						out[#out + 1] = { label = c.label(), before = before, after = Polestar.Engine.GroupAnswer(7) }
+						out[#out + 1] = { label = c.label(), before = before == nil and "not answered" or before, after = Polestar.Engine.GroupAnswer(7) }
 						c.set(false)
 						out[#out].off = Polestar.Engine.GroupAnswer(7)
 					end
@@ -302,5 +357,5 @@ Polestar.RegisterGuide({ id = "test/h", pack = "test", title = "H", faction = "H
 		..Default::default()
 	});
 	assert_eq!(out[0], json!([{ "quest": 7, "title": "Kobold Camp Cleanup" }]));
-	assert_eq!(out[1], json!([{ "label": "Kobold Camp Cleanup", "before": false, "after": "do", "off": "skip" }]));
+	assert_eq!(out[1], json!([{ "label": "Kobold Camp Cleanup", "before": "not answered", "after": "do", "off": "skip" }]));
 }
