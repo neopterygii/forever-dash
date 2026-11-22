@@ -302,8 +302,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         # Publishing a draft makes it latest despite --latest=false, so the newest addon release
-        # (v<x.y.z>.<n>) is set back as latest after.
+        # (v<upstream>.<n>, upstream being 3 or 4 parts) is set back as latest after.
         run: |
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
-          addon="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sort -V | tail -1)"
+          addon="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName | select(test("^v[0-9]+(\\.[0-9]+){3,4}$"))' | sort -V | tail -1)"
           if [ -n "$addon" ]; then gh release edit "$addon" --repo "$GITHUB_REPOSITORY" --latest; fi
