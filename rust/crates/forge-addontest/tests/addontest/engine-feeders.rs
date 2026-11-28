@@ -222,6 +222,28 @@ fn far_or_other_zone_feeders_stay_out_and_their_quests_and_empty_steps_go() {
 	assert_eq!(other["hidden"], json!([6621]));
 }
 
+// The guide window's "Left out" line for a quest left out names the quest it needs in the game's language, as the
+// quest's own line does (#3015's group quest question had the same slip): on a German client King of the
+// Foulweald reads "Requires “Zwischen Fels und Distelfell” first", not the guide's English title.
+#[test]
+fn a_left_out_quest_names_the_quest_it_needs_in_the_game_s_language() {
+	let out = run(
+		"function GetLocale() return \"deDE\" end\nw.titles[216] = \"Zwischen Fels und Distelfell\"\n",
+		FAR,
+		&format!(
+			r#"{OPEN}
+local why = {{}}
+for i = 1, E.GetStepCount() do
+	for _, o in ipairs(E.LeftOutHere(i, true)) do
+		if o.quest == 6621 then why[#why + 1] = o.text end
+	end
+end
+emit({{ hidden = r.hidden, why = why }})"#
+		),
+	);
+	assert_eq!(out, json!({ "hidden": [6621], "why": ["Requires “Zwischen Fels und Distelfell” first"] }));
+}
+
 #[test]
 fn a_player_who_did_the_route_gets_the_guide_as_written() {
 	let out = run("w.complete({ 6382, 6383, 216, 98 }); w.abandon(6382)\n", NEAR, &format!("{OPEN}\nemit(r)"));
@@ -1028,4 +1050,103 @@ fn t_3021_duskwood_only_offers_viktori_while_carrying_the_bronze_tube() {
 	assert!(offered("", "", 0).is_empty(), "do not offer the purchase without its price");
 	assert!(offered("", "174", 0).is_empty(), "holding the quest does not pay for it");
 	assert!(offered("174", "175", 0).is_empty(), "the player already paid");
+}
+
+// #3880 (Fitz on preview5): a level-25 Orc who skipped The Barrens (02) opened The Barrens & Stonetalon Mountains
+// (04); its report read "Isha Awak [hidden: needs Mahren Skyseer from The Barrens & Stonetalon Mountains]" and
+// "Betrayal from Within [hidden: needs Betrayal from Within from ...]": both named a quest this same guide accepts.
+// The hides are right (Mahren Skyseer 874 needs 02's Cry of the Thunderhawk 913; Betrayal from Within 879 needs
+// 02's Blood Shards of Agamaggan 5052), but a left-out accept names the first quest down its chain that this guide
+// does not take and the guide that gives it, never one of this guide's own, whether the plan reached it fresh or
+// through accepts an update passed (CharState().gone, read as this guide's own feeder steps).
+fn hidden_3880(gone: bool) -> Value {
+	let dir = forge_addontest::run::addons_dir();
+	let mark = if gone {
+		r#"
+local function h(s) local x = 5381 for i = 1, #s do x = (x * 33 + s:byte(i)) % 4294967296 end return x end
+local G, passed = Polestar.Guides.Get("forever/horde/04-the-barrens"), {}
+for _, step in ipairs(G.steps) do
+	local ids, hit = {}, {}
+	for i, goal in ipairs(step.goals) do
+		ids[i] = goal.t .. ":" .. tostring(goal.quest or goal.npc or goal.item or goal.spell or goal.object or goal.faction or goal.achievement or goal.level or goal.location or goal.map or "")
+		if goal.t == "accept" and (goal.quest == 874 or goal.quest == 879) then hit[ids[i]] = true end
+	end
+	if next(hit) then passed[h(table.concat(ids, ","))] = hit end
+end
+Polestar.CharState().gone = { ["forever/horde/04-the-barrens"] = passed }"#
+	} else {
+		""
+	};
+	emitted(&RunAddon {
+		stubs: vec!["stub_world.lua"],
+		before: r#"local w = stub.world
+w.race, w.faction, w.class, w.className, w.level = "Orc", "Horde", "WARRIOR", "WARRIOR", 25"#
+			.into(),
+		addons: vec![Addon::files("Polestar", &["Core/Core.xml"]), Addon::dir("Polestar_Guides", dir.join("Polestar_Guides")), Addon::dir("Polestar_Guides_Horde", dir.join("Polestar_Guides_Horde"))],
+		script: format!(
+			r#"
+E = Polestar.Engine
+for id, b in pairs(Polestar.MapFrames.era) do stub.world.addMap(id, b) end
+stub.login(); stub.advance(0.25)
+{mark}
+E.SetGuide("forever/horde/04-the-barrens"); stub.advance(0.25)
+stub.fire("QUEST_LOG_UPDATE"); stub.advance(0.25)
+local g, own, out = E.GetGuide(), {{}}, {{ own = {{}} }}
+for _, step in ipairs(Polestar.Guides.Get("forever/horde/04-the-barrens").steps) do
+	for _, goal in ipairs(step.goals) do if goal.t == "accept" and goal.quest then own[goal.quest] = true end end
+end
+for q, h in pairs(g.hidden or {{}}) do
+	if own[h.need] then out.own[#out.own + 1] = q .. " needs " .. h.need end
+	if q == 873 or q == 906 then out[tostring(q)] = {{ need = h.need, title = h.needTitle or false, from = h.from or false }} end
+end
+emit(out)"#
+		),
+		..Default::default()
+	})
+	.remove(0)
+}
+
+#[test]
+fn a_left_out_accept_names_the_earlier_guide_s_quest_it_lacks_never_one_of_its_own_guide_3880() {
+	let fresh = hidden_3880(false);
+	let passed = hidden_3880(true);
+	for (gone, out) in [(false, &fresh), (true, &passed)] {
+		assert_eq!(out["own"], json!({}), "gone={gone}: no hidden line names a quest this guide accepts: {out}");
+		for q in ["873", "906"] {
+			assert_eq!(out[q]["from"], "The Barrens", "gone={gone} {q}: the quest it lacks comes from The Barrens: {out}");
+			assert!(out[q]["title"].is_string(), "gone={gone} {q}: {out}");
+		}
+	}
+	assert_eq!(fresh["873"], json!({ "need": 913, "title": "Cry of the Thunderhawk", "from": "The Barrens" }), "{fresh}");
+	assert_eq!(fresh["906"], json!({ "need": 5052, "title": "Blood Shards of Agamaggan", "from": "The Barrens" }), "{fresh}");
+	assert_eq!((&fresh["873"], &fresh["906"]), (&passed["873"], &passed["906"]), "the same line whether an update passed 874 and 879 or not");
+}
+
+// #3925 (Fitz, 24 Nov): an optional class chain (items only, not on the worth-it list: Core/ClassQuestList.lua) is
+// never required. Senani's two accepts, here a class chain listed optional, bring no feeder: the hunt stays out and
+// the two accepts are left out with their hand-ins. A player who holds one of them has the chain under way: it stays.
+#[test]
+fn an_optional_class_chain_brings_no_feeder_and_is_left_out_unless_under_way_3925() {
+	const OPTIONAL: &str = r#"
+Polestar.ClassQuestList = { OptionalGuide = function() return false end, OptionalQuest = function(q) return q == 23 or q == 24 end }
+Polestar.ClassRewards = { rewards = {}, quests = { [23] = { 1024, 23, 0 }, [24] = { 1024, 23, 0 } } }
+"#;
+	let fresh = run("", NEAR, &format!("{OPTIONAL}{OPEN}\nemit(r)"));
+	assert_eq!(
+		fresh["shape"],
+		json!([
+			"Zoram'gar Outpost <test/05 3> accept:216",
+			"Thistlefur Village <test/05 4> kill:216",
+			"Zoram'gar Outpost <test/05 5> turnin:216",
+			"Zoram'gar Outpost accept:6442 accept:99",
+			"Splintertree Post accept:25",
+			"Karang Amakkar goto accept:6621",
+			"Night Run turnin:25",
+		]),
+		"{fresh}"
+	);
+	assert_eq!(fresh["hidden"], json!([23, 24]), "{fresh}");
+	let held = run("w.onQuest(23, {})", NEAR, &format!("{OPTIONAL}{OPEN}\nemit(r)"));
+	assert!(held["shape"].as_array().unwrap().iter().any(|s| s.as_str().unwrap().contains("turnin:23")), "the chain under way keeps its hand-in: {held}");
+	assert!(!held["hidden"].as_array().unwrap().iter().any(|q| q == 23), "{held}");
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { flip } from 'svelte/animate';
 	import { crossfade } from 'svelte/transition';
-	import { updateAllCount } from '../lib/addons';
+	import { updateAllCount, updateAllTitle } from '../lib/addons';
 	import { app } from '../lib/app.svelte';
 	import { api, message } from '../lib/backend';
 	import { ago } from '../lib/format';
@@ -158,6 +158,7 @@
 				class:primary={!guard}
 				class:armed={armed === 'all'}
 				disabled={updatingAll || !addons.gameFound}
+				title={addons.gameFound ? updateAllTitle(snapshot) : 'Find the game folder first (Settings > Game).'}
 				onclick={() => (guard ? confirm('all', updateAll) : updateAll())}
 				in:swap
 			>
